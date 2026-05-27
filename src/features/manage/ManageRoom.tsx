@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useRepositories } from "../../data/repositoryProvider";
 import type { BalloonGift, GiftRoom } from "../../domain/types";
 
 function recipientUrl(token: string) {
   return `${window.location.origin}/r/${token}`;
+}
+
+function recipientPath(token: string) {
+  return `/r/${token}`;
 }
 
 export function ManageRoom({ room: initialRoom }: { room: GiftRoom }) {
@@ -79,7 +84,9 @@ export function ManageRoom({ room: initialRoom }: { room: GiftRoom }) {
       {room.status === "published" ? (
         <div className="recipient-link">
           <strong>收礼链接</strong>
-          <p>{recipientUrl(room.recipientToken)}</p>
+          <p>
+            <Link to={recipientPath(room.recipientToken)}>{recipientUrl(room.recipientToken)}</Link>
+          </p>
         </div>
       ) : null}
     </section>

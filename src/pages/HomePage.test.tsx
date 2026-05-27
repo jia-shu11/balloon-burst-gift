@@ -29,5 +29,7 @@ describe("HomePage", () => {
     expect(screen.getByText("组织者管理链接")).toBeInTheDocument();
     expect(screen.getByText(/\/gift\/invite_/)).toBeInTheDocument();
     expect(screen.getByText(/\/manage\/manage_/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /\/gift\/invite_/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /\/manage\/manage_/ })).toBeInTheDocument();
   });
 });

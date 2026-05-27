@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { createInMemoryRepositories } from "../../data/inMemoryRepositories";
 import { RepositoryProvider } from "../../data/repositoryProvider";
@@ -31,7 +32,9 @@ describe("ManageRoom", () => {
 
     render(
       <RepositoryProvider repositories={repositories}>
-        <ManageRoom room={room} />
+        <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+          <ManageRoom room={room} />
+        </MemoryRouter>
       </RepositoryProvider>
     );
 
@@ -41,5 +44,6 @@ describe("ManageRoom", () => {
 
     await user.click(screen.getByRole("button", { name: "发布收礼链接" }));
     expect(await screen.findByText(/\/r\/recipient_/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /\/r\/recipient_/ })).toBeInTheDocument();
   });
 });

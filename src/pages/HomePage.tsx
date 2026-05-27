@@ -1,4 +1,5 @@
 import { FormEvent, useState } from "react";
+import { Link } from "react-router-dom";
 import { useRepositories } from "../data/repositoryProvider";
 import type { GiftRoom } from "../domain/types";
 
@@ -59,9 +60,13 @@ export function HomePage() {
         <section className="panel link-output" aria-live="polite">
           <h2>房间已创建</h2>
           <h3>送礼者制作链接</h3>
-          <p>{absolutePath(`/gift/${createdRoom.inviteToken}`)}</p>
+          <p>
+            <Link to={`/gift/${createdRoom.inviteToken}`}>{absolutePath(`/gift/${createdRoom.inviteToken}`)}</Link>
+          </p>
           <h3>组织者管理链接</h3>
-          <p>{absolutePath(`/manage/${createdRoom.manageToken}`)}</p>
+          <p>
+            <Link to={`/manage/${createdRoom.manageToken}`}>{absolutePath(`/manage/${createdRoom.manageToken}`)}</Link>
+          </p>
         </section>
       ) : null}
     </main>
