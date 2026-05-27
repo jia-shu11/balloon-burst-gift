@@ -60,12 +60,53 @@ describe("in-memory repositories", () => {
       imageBytes: 0
     });
 
-    await gifts.deleteGift(gift.id);
+    await gifts.deleteGift({ giftId: gift.id, manageToken: room.manageToken });
     const published = await rooms.publishRoom(room.manageToken);
     const active = await gifts.listActiveGifts(room.id);
 
     expect(published.status).toBe("published");
     expect(published.publishedAt).not.toBeNull();
     expect(active).toHaveLength(0);
+  });
+
+  it("rejects gift deletion without the room manage token", async () => {
+    const { rooms, gifts } = createInMemoryRepositories();
+    const room = await rooms.createRoom({ title: "Room", recipientName: "R", promptText: "" });
+    const gift = await gifts.createGift({
+      roomId: room.id,
+      giverName: "Bob",
+      audioUrl: "https://cdn.example/bob.webm",
+      audioDurationSec: 15,
+      averageVolume: 0.3,
+      peakVolume: 0.6,
+      transcript: "祝你开心",
+      editedTranscript: "祝你开心",
+      extraText: "",
+      imageUrls: [],
+      imageBytes: 0
+    });
+
+    await expect(gifts.deleteGift({ giftId: gift.id, manageToken: "wrong-token" })).rejects.toThrow("管理链接无效");
+    await expect(gifts.listActiveGifts(room.id)).resolves.toHaveLength(1);
+  });
+
+  it("rejects gift creation for a missing room", async () => {
+    const { gifts } = createInMemoryRepositories();
+
+    await expect(
+      gifts.createGift({
+        roomId: "missing-room",
+        giverName: "Alice",
+        audioUrl: "https://cdn.example/audio.webm",
+        audioDurationSec: 20,
+        averageVolume: 0.5,
+        peakVolume: 0.8,
+        transcript: "生日快乐",
+        editedTranscript: "生日快乐",
+        extraText: "",
+        imageUrls: [],
+        imageBytes: 0
+      })
+    ).rejects.toThrow("房间不存在");
   });
 });

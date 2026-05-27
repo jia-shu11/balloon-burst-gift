@@ -47,7 +47,7 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
     async publishRoom(manageToken: string) {
       const room = [...roomsById.values()].find((candidate) => candidate.manageToken === manageToken);
       if (!room) throw new Error("管理链接无效");
-      const published: GiftRoom = { ...room, status: "published", publishedAt: nowIso() };
+      const published: GiftRoom = { ...room, status: "published", publishedAt: room.publishedAt ?? nowIso() };
       roomsById.set(published.id, published);
       return published;
     }
@@ -55,6 +55,7 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
 
   const gifts: GiftRepository = {
     async createGift(input: CreateGiftInput) {
+      if (!roomsById.has(input.roomId)) throw new Error("房间不存在");
       const gift: BalloonGift = {
         id: crypto.randomUUID(),
         ...input,
@@ -77,9 +78,12 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
     async listActiveGifts(roomId: string) {
       return [...giftsById.values()].filter((gift) => gift.roomId === roomId && gift.deletedAt === null);
     },
-    async deleteGift(giftId: string) {
-      const gift = giftsById.get(giftId);
-      if (gift) giftsById.set(giftId, { ...gift, deletedAt: nowIso() });
+    async deleteGift(input: { giftId: string; manageToken: string }) {
+      const gift = giftsById.get(input.giftId);
+      if (!gift) return;
+      const room = roomsById.get(gift.roomId);
+      if (!room || room.manageToken !== input.manageToken) throw new Error("管理链接无效");
+      giftsById.set(input.giftId, { ...gift, deletedAt: nowIso() });
     }
   };
 

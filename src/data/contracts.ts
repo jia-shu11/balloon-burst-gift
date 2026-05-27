@@ -31,5 +31,5 @@ export interface RoomRepository {
 export interface GiftRepository {
   createGift(input: CreateGiftInput): Promise<BalloonGift>;
   listActiveGifts(roomId: string): Promise<BalloonGift[]>;
-  deleteGift(giftId: string): Promise<void>;
+  deleteGift(input: { giftId: string; manageToken: string }): Promise<void>;
 }
