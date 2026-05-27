@@ -81,4 +81,39 @@ describe("GiverComposer", () => {
     expect(storedGifts[0].editedTranscript).toBe("生日快乐");
     expect(onSubmitted).toHaveBeenCalledTimes(1);
   });
+
+  it("records audio and applies live transcription", async () => {
+    const user = userEvent.setup();
+    const repositories = createInMemoryRepositories();
+    const stopMeter = vi.fn();
+    const stopSpeech = vi.fn();
+    const recorder = {
+      start: vi.fn(async (onLevel: (level: number) => void) => {
+        onLevel(0.7);
+        return stopMeter;
+      }),
+      stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
+    };
+    const startTranscription = vi.fn((onTranscript: (result: { source: "speech-recognition"; text: string }) => void) => {
+      onTranscript({ source: "speech-recognition", text: "生日快乐" });
+      return stopSpeech;
+    });
+    const nowMs = vi.fn().mockReturnValueOnce(1000).mockReturnValueOnce(4100);
+
+    render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer room={room} recorder={recorder} startTranscription={startTranscription} nowMs={nowMs} />
+      </RepositoryProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: "开始录音" }));
+    expect(screen.getByText("录音中...")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("生日快乐")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "结束录音" }));
+
+    expect(await screen.findByText("3 秒语音已就绪")).toBeInTheDocument();
+    expect(stopMeter).toHaveBeenCalledTimes(1);
+    expect(stopSpeech).toHaveBeenCalledTimes(1);
+  });
 });

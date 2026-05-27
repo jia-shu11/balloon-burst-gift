@@ -1,8 +1,15 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { useRepositories } from "../../data/repositoryProvider";
+import { uploadGiftFile } from "../../data/storage";
+import { createSupabaseBrowserClient } from "../../data/supabaseClient";
 import { generateBalloonParams } from "../../domain/balloonParams";
 import type { GiftRoom } from "../../domain/types";
+import { BrowserAudioRecorder, createRecordingSummary } from "./audioRecorder";
 import { LiveBalloonPreview } from "./LiveBalloonPreview";
+import {
+  startSpeechTranscription as startBrowserSpeechTranscription,
+  type TranscriptResult
+} from "./transcription";
 
 export interface RecordingDraft {
   blob: Blob;
@@ -16,39 +23,95 @@ interface ImageUploadResult {
   bytes: number;
 }
 
+interface UploadContext {
+  roomId: string;
+  mediaId: string;
+}
+
+interface AudioRecorderController {
+  start(onData: (level: number) => void): Promise<() => void>;
+  stop(): Promise<Blob>;
+}
+
+type StartTranscription = (onTranscript: (result: TranscriptResult) => void) => (() => void) | null;
+
+function createMediaId() {
+  return crypto.randomUUID();
+}
+
+function shouldUseSupabaseStorage() {
+  return import.meta.env.VITE_REPOSITORY_MODE === "supabase";
+}
+
+async function defaultUploadAudio(blob: Blob, context: UploadContext) {
+  if (shouldUseSupabaseStorage()) {
+    return uploadGiftFile(createSupabaseBrowserClient(), context.roomId, context.mediaId, blob, "audio.webm");
+  }
+  return URL.createObjectURL(blob);
+}
+
+async function defaultUploadImages(files: File[], context: UploadContext): Promise<ImageUploadResult> {
+  if (shouldUseSupabaseStorage()) {
+    const client = createSupabaseBrowserClient();
+    const urls = await Promise.all(
+      files.map((file, index) => uploadGiftFile(client, context.roomId, context.mediaId, file, file.name || `image-${index}.png`))
+    );
+    return {
+      urls,
+      bytes: files.reduce((total, file) => total + file.size, 0)
+    };
+  }
+
+  return {
+    urls: files.map((file) => URL.createObjectURL(file)),
+    bytes: files.reduce((total, file) => total + file.size, 0)
+  };
+}
+
 export function GiverComposer({
   room,
   initialRecording = null,
-  uploadAudio = async (blob) => URL.createObjectURL(blob),
-  uploadImages = async (files) => ({
-    urls: files.map((file) => URL.createObjectURL(file)),
-    bytes: files.reduce((total, file) => total + file.size, 0)
-  }),
+  uploadAudio = defaultUploadAudio,
+  uploadImages = defaultUploadImages,
+  recorder: providedRecorder,
+  startTranscription = startBrowserSpeechTranscription,
+  nowMs = () => performance.now(),
   onSubmitted
 }: {
   room: GiftRoom;
   initialRecording?: RecordingDraft | null;
-  uploadAudio?: (blob: Blob) => Promise<string>;
-  uploadImages?: (files: File[]) => Promise<ImageUploadResult>;
+  uploadAudio?: (blob: Blob, context: UploadContext) => Promise<string>;
+  uploadImages?: (files: File[], context: UploadContext) => Promise<ImageUploadResult>;
+  recorder?: AudioRecorderController;
+  startTranscription?: StartTranscription;
+  nowMs?: () => number;
   onSubmitted?: () => void;
 }) {
   const { gifts } = useRepositories();
+  const recorderRef = useRef<AudioRecorderController | null>(null);
+  if (!recorderRef.current) recorderRef.current = providedRecorder ?? new BrowserAudioRecorder();
+
   const [giverName, setGiverName] = useState("");
   const [transcript, setTranscript] = useState("");
   const [extraText, setExtraText] = useState("");
   const [imageFiles, setImageFiles] = useState<File[]>([]);
-  const [recording] = useState<RecordingDraft | null>(initialRecording);
-  const [level] = useState(0.2);
+  const [recording, setRecording] = useState<RecordingDraft | null>(initialRecording);
+  const [level, setLevel] = useState(initialRecording?.averageVolume ?? 0.2);
+  const [recordingActive, setRecordingActive] = useState(false);
+  const [stopMeter, setStopMeter] = useState<(() => void) | null>(null);
+  const [stopTranscription, setStopTranscription] = useState<(() => void) | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const samplesRef = useRef<number[]>([]);
+  const recordingStartedAtRef = useRef<number | null>(null);
 
   const imageBytes = imageFiles.reduce((total, file) => total + file.size, 0);
   const previewParams = useMemo(
     () =>
       generateBalloonParams({
         seed: `${room.id}:${giverName || "preview"}`,
-        audioDurationSec: recording?.durationSec ?? 8,
+        audioDurationSec: recording?.durationSec ?? (recordingActive ? 18 : 8),
         averageVolume: recording?.averageVolume ?? level,
         peakVolume: recording?.peakVolume ?? level,
         transcriptChars: transcript.length,
@@ -56,8 +119,63 @@ export function GiverComposer({
         imageCount: imageFiles.length,
         imageBytes
       }),
-    [extraText.length, giverName, imageBytes, imageFiles.length, level, recording, room.id, transcript.length]
+    [extraText.length, giverName, imageBytes, imageFiles.length, level, recording, recordingActive, room.id, transcript.length]
   );
+
+  async function startRecording() {
+    if (recordingActive) return;
+
+    setError("");
+    setMessage("");
+    setRecording(null);
+    samplesRef.current = [];
+    recordingStartedAtRef.current = nowMs();
+
+    try {
+      const stop = await recorderRef.current!.start((nextLevel) => {
+        const normalizedLevel = Number(Math.min(1, Math.max(0, nextLevel)).toFixed(3));
+        setLevel(normalizedLevel);
+        samplesRef.current = [...samplesRef.current.slice(-400), normalizedLevel];
+      });
+      const stopSpeech = startTranscription((result) => {
+        if (result.text) setTranscript(result.text);
+      });
+      setStopMeter(() => stop);
+      setStopTranscription(() => stopSpeech);
+      setRecordingActive(true);
+    } catch (caught) {
+      recordingStartedAtRef.current = null;
+      setError(caught instanceof Error ? caught.message : "无法开始录音");
+    }
+  }
+
+  async function stopRecording() {
+    setError("");
+    stopMeter?.();
+    stopTranscription?.();
+    setStopMeter(null);
+    setStopTranscription(null);
+    setRecordingActive(false);
+
+    try {
+      const blob = await recorderRef.current!.stop();
+      const endedAtMs = nowMs();
+      const summary = createRecordingSummary({
+        startedAtMs: recordingStartedAtRef.current ?? endedAtMs,
+        endedAtMs,
+        samples: samplesRef.current
+      });
+      setRecording({
+        blob,
+        durationSec: summary.durationSec,
+        averageVolume: summary.averageVolume,
+        peakVolume: summary.peakVolume
+      });
+      setLevel(summary.averageVolume || level);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "无法结束录音");
+    }
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -75,8 +193,10 @@ export function GiverComposer({
 
     setSubmitting(true);
     try {
-      const audioUrl = await uploadAudio(recording.blob);
-      const imageUpload = await uploadImages(imageFiles);
+      const mediaId = createMediaId();
+      const uploadContext = { roomId: room.id, mediaId };
+      const audioUrl = await uploadAudio(recording.blob, uploadContext);
+      const imageUpload = await uploadImages(imageFiles, uploadContext);
       await gifts.createGift({
         roomId: room.id,
         inviteToken: room.inviteToken,
@@ -116,8 +236,13 @@ export function GiverComposer({
         </label>
 
         <div className="recording-status">
-          <button type="button">开始录音</button>
-          <span>{recording ? `${recording.durationSec} 秒语音已就绪` : "还没有录音"}</span>
+          <button type="button" onClick={startRecording} disabled={recordingActive}>
+            开始录音
+          </button>
+          <button type="button" onClick={stopRecording} disabled={!recordingActive}>
+            结束录音
+          </button>
+          <span>{recordingActive ? "录音中..." : recording ? `${recording.durationSec} 秒语音已就绪` : "还没有录音"}</span>
         </div>
 
         <label>
