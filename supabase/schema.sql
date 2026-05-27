@@ -39,19 +39,10 @@ alter table gift_rooms enable row level security;
 alter table balloon_gifts enable row level security;
 
 comment on table gift_rooms is
-  'Invite, manage, and recipient tokens are bearer secrets. Do not expose broad anon select/update/delete. Token-based reads and management actions must be implemented through a trusted server/API or SECURITY DEFINER RPC in later work.';
+  'Invite, manage, and recipient tokens are bearer secrets. No broad anon table access should be exposed. All public app operations must go through token-scoped trusted server/API or SECURITY DEFINER RPC functions.';
 
 comment on table balloon_gifts is
-  'Gift rows are scoped by gift_rooms bearer tokens. Do not expose broad anon select/update/delete. Token-based reads and management actions must be implemented through a trusted server/API or SECURITY DEFINER RPC in later work.';
+  'Gift rows are scoped by gift_rooms bearer tokens. No broad anon table access should be exposed. All public app operations must go through token-scoped trusted server/API or SECURITY DEFINER RPC functions.';
 
-create policy "anon can create gift rooms"
-  on gift_rooms
-  for insert
-  to anon
-  with check (true);
-
-create policy "anon can create balloon gifts"
-  on balloon_gifts
-  for insert
-  to anon
-  with check (true);
+drop policy if exists "anon can create gift rooms" on gift_rooms;
+drop policy if exists "anon can create balloon gifts" on balloon_gifts;
