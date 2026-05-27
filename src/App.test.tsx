@@ -1,11 +1,15 @@
 import { render, screen } from "@testing-library/react";
+import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
 import { expect, it } from "vitest";
 import { App } from "./App";
 
 function renderRoute(route: string) {
   render(
-    <MemoryRouter initialEntries={[route]}>
+    <MemoryRouter
+      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+      initialEntries={[route]}
+    >
       <App />
     </MemoryRouter>
   );
