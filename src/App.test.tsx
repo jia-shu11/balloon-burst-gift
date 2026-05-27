@@ -1,41 +1,39 @@
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { MemoryRouter } from "react-router-dom";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { App } from "./App";
+import { createInMemoryRepositories } from "./data/inMemoryRepositories";
+import { RepositoryProvider } from "./data/repositoryProvider";
 
-function renderRoute(route: string) {
+function renderAt(path: string) {
+  const repositories = createInMemoryRepositories();
   render(
-    <MemoryRouter
-      future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
-      initialEntries={[route]}
-    >
-      <App />
-    </MemoryRouter>
+    <RepositoryProvider repositories={repositories}>
+      <MemoryRouter
+        future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+        initialEntries={[path]}
+      >
+        <App />
+      </MemoryRouter>
+    </RepositoryProvider>
   );
 }
 
-it("renders the home placeholder", () => {
-  renderRoute("/");
+describe("App routes", () => {
+  it("renders the organizer home route", () => {
+    renderAt("/");
+    expect(screen.getByRole("heading", { name: "Balloon Burst Gift" })).toBeInTheDocument();
+  });
 
-  expect(screen.getByRole("heading", { name: "Balloon Burst Gift" })).toBeInTheDocument();
-  expect(screen.getByRole("link", { name: "返回首页" })).toBeInTheDocument();
-});
+  it("renders giver, management, and recipient routes", () => {
+    renderAt("/gift/invite_abc");
+    expect(screen.getByRole("heading", { name: "制作气球礼物" })).toBeInTheDocument();
 
-it("renders the gift route labels", () => {
-  renderRoute("/gift/invite-token");
+    renderAt("/manage/manage_abc");
+    expect(screen.getByRole("heading", { name: "管理礼物房间" })).toBeInTheDocument();
 
-  expect(screen.getByRole("heading", { name: "制作气球礼物" })).toBeInTheDocument();
-});
-
-it("renders the management route labels", () => {
-  renderRoute("/manage/manage-token");
-
-  expect(screen.getByRole("heading", { name: "管理礼物房间" })).toBeInTheDocument();
-});
-
-it("renders the recipient route labels", () => {
-  renderRoute("/r/recipient-token");
-
-  expect(screen.getByRole("heading", { name: "收礼现场" })).toBeInTheDocument();
+    renderAt("/r/recipient_abc");
+    expect(screen.getByRole("heading", { name: "收礼现场" })).toBeInTheDocument();
+  });
 });
