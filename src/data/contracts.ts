@@ -8,6 +8,7 @@ export interface CreateRoomInput {
 
 export interface CreateGiftInput {
   roomId: string;
+  inviteToken: string;
   giverName: string;
   audioUrl: string;
   audioDurationSec: number;
@@ -30,6 +31,6 @@ export interface RoomRepository {
 
 export interface GiftRepository {
   createGift(input: CreateGiftInput): Promise<BalloonGift>;
-  listActiveGifts(roomId: string): Promise<BalloonGift[]>;
+  listActiveGifts(input: { roomId: string; manageToken?: string; recipientToken?: string }): Promise<BalloonGift[]>;
   deleteGift(input: { giftId: string; manageToken: string }): Promise<void>;
 }

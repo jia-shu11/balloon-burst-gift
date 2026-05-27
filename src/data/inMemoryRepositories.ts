@@ -55,10 +55,22 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
 
   const gifts: GiftRepository = {
     async createGift(input: CreateGiftInput) {
-      if (!roomsById.has(input.roomId)) throw new Error("房间不存在");
+      const room = roomsById.get(input.roomId);
+      if (!room) throw new Error("房间不存在");
+      if (room.inviteToken !== input.inviteToken) throw new Error("邀请链接无效");
       const gift: BalloonGift = {
         id: crypto.randomUUID(),
-        ...input,
+        roomId: input.roomId,
+        giverName: input.giverName,
+        audioUrl: input.audioUrl,
+        audioDurationSec: input.audioDurationSec,
+        averageVolume: input.averageVolume,
+        peakVolume: input.peakVolume,
+        transcript: input.transcript,
+        editedTranscript: input.editedTranscript,
+        extraText: input.extraText,
+        imageUrls: input.imageUrls,
+        imageBytes: input.imageBytes,
         balloonParams: generateBalloonParams({
           seed: `${input.roomId}:${input.giverName}:${input.audioUrl}`,
           audioDurationSec: input.audioDurationSec,
@@ -75,8 +87,13 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
       giftsById.set(gift.id, gift);
       return gift;
     },
-    async listActiveGifts(roomId: string) {
-      return [...giftsById.values()].filter((gift) => gift.roomId === roomId && gift.deletedAt === null);
+    async listActiveGifts(input: { roomId: string; manageToken?: string; recipientToken?: string }) {
+      const room = roomsById.get(input.roomId);
+      if (!room) throw new Error("房间不存在");
+      const canManage = input.manageToken === room.manageToken;
+      const canReceive = input.recipientToken === room.recipientToken && room.status === "published";
+      if (!canManage && !canReceive) throw new Error("链接无效或房间尚未发布");
+      return [...giftsById.values()].filter((gift) => gift.roomId === input.roomId && gift.deletedAt === null);
     },
     async deleteGift(input: { giftId: string; manageToken: string }) {
       const gift = giftsById.get(input.giftId);
