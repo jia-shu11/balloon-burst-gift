@@ -73,4 +73,25 @@ describe("generateBalloonParams", () => {
     expect(params.fragmentCount).toBeLessThanOrEqual(36);
     expect(params.glow).toBeLessThanOrEqual(1);
   });
+
+  it("normalizes malformed and negative metrics before scoring", () => {
+    const params = generateBalloonParams({
+      seed: "malformed",
+      audioDurationSec: Number.NaN,
+      averageVolume: Number.POSITIVE_INFINITY,
+      peakVolume: -1,
+      transcriptChars: Number.NEGATIVE_INFINITY,
+      extraTextChars: -250,
+      imageCount: -10,
+      imageBytes: 900_000
+    });
+
+    expect(Object.values(params).every(Number.isFinite)).toBe(true);
+    expect(params.radius).toBeGreaterThanOrEqual(42);
+    expect(params.radius).toBeLessThanOrEqual(132);
+    expect(params.fragmentCount).toBeGreaterThanOrEqual(8);
+    expect(params.fragmentCount).toBeLessThanOrEqual(36);
+    expect(params.glow).toBeGreaterThanOrEqual(0.25);
+    expect(params.glow).toBeLessThanOrEqual(1);
+  });
 });

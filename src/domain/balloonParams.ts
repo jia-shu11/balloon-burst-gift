@@ -4,6 +4,10 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
+function finiteNonNegative(value: number) {
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
 function hashSeed(seed: string) {
   let hash = 2166136261;
   for (const char of seed) {
@@ -19,12 +23,22 @@ function seededUnit(seed: string, salt: number) {
 }
 
 export function generateBalloonParams(metrics: GiftInputMetrics): BalloonParams {
-  const durationScore = clamp(metrics.audioDurationSec / 75, 0, 1);
-  const transcriptScore = clamp(metrics.transcriptChars / 800, 0, 1);
-  const textScore = clamp(metrics.extraTextChars / 500, 0, 1);
-  const imageScore = clamp(metrics.imageCount / 5 + metrics.imageBytes / 4_000_000, 0, 1);
+  const audioDurationSec = finiteNonNegative(metrics.audioDurationSec);
+  const averageVolume = finiteNonNegative(metrics.averageVolume);
+  const peakVolume = finiteNonNegative(metrics.peakVolume);
+  const transcriptChars = finiteNonNegative(metrics.transcriptChars);
+  const extraTextChars = finiteNonNegative(metrics.extraTextChars);
+  const imageCount = finiteNonNegative(metrics.imageCount);
+  const imageBytes = finiteNonNegative(metrics.imageBytes);
+
+  const durationScore = clamp(audioDurationSec / 75, 0, 1);
+  const transcriptScore = clamp(transcriptChars / 800, 0, 1);
+  const textScore = clamp(extraTextChars / 500, 0, 1);
+  const imageCountScore = clamp(imageCount / 5, 0, 1);
+  const imageBytesScore = clamp(imageBytes / 4_000_000, 0, 1);
+  const imageScore = clamp(imageCountScore + imageBytesScore, 0, 1);
   const dataScore = clamp(durationScore * 0.62 + transcriptScore * 0.14 + textScore * 0.1 + imageScore * 0.14, 0, 1);
-  const volumeScore = clamp(metrics.averageVolume * 0.65 + metrics.peakVolume * 0.35, 0, 1);
+  const volumeScore = clamp(averageVolume * 0.65 + peakVolume * 0.35, 0, 1);
   const variance = (seededUnit(metrics.seed, 1) - 0.5) * 10;
 
   return {
