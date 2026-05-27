@@ -46,3 +46,280 @@ comment on table balloon_gifts is
 
 drop policy if exists "anon can create gift rooms" on gift_rooms;
 drop policy if exists "anon can create balloon gifts" on balloon_gifts;
+
+create or replace function create_gift_room(
+  p_title text,
+  p_recipient_name text,
+  p_prompt_text text default ''
+)
+returns gift_rooms
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  created gift_rooms;
+begin
+  insert into gift_rooms (
+    title,
+    recipient_name,
+    prompt_text,
+    invite_token,
+    manage_token,
+    recipient_token
+  )
+  values (
+    p_title,
+    p_recipient_name,
+    coalesce(p_prompt_text, ''),
+    'invite_' || replace(gen_random_uuid()::text, '-', ''),
+    'manage_' || replace(gen_random_uuid()::text, '-', ''),
+    'recipient_' || replace(gen_random_uuid()::text, '-', '')
+  )
+  returning * into created;
+
+  return created;
+end;
+$$;
+
+create or replace function get_room_by_invite_token(p_invite_token text)
+returns table (
+  id uuid,
+  title text,
+  recipient_name text,
+  prompt_text text,
+  invite_token text,
+  manage_token text,
+  recipient_token text,
+  status text,
+  created_at timestamptz,
+  published_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    r.id,
+    r.title,
+    r.recipient_name,
+    r.prompt_text,
+    r.invite_token,
+    ''::text as manage_token,
+    ''::text as recipient_token,
+    r.status,
+    r.created_at,
+    r.published_at
+  from gift_rooms r
+  where r.invite_token = p_invite_token;
+$$;
+
+create or replace function get_room_by_manage_token(p_manage_token text)
+returns setof gift_rooms
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select *
+  from gift_rooms
+  where manage_token = p_manage_token;
+$$;
+
+create or replace function get_published_room_by_recipient_token(p_recipient_token text)
+returns table (
+  id uuid,
+  title text,
+  recipient_name text,
+  prompt_text text,
+  invite_token text,
+  manage_token text,
+  recipient_token text,
+  status text,
+  created_at timestamptz,
+  published_at timestamptz
+)
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select
+    r.id,
+    r.title,
+    r.recipient_name,
+    r.prompt_text,
+    ''::text as invite_token,
+    ''::text as manage_token,
+    r.recipient_token,
+    r.status,
+    r.created_at,
+    r.published_at
+  from gift_rooms r
+  where r.recipient_token = p_recipient_token
+    and r.status = 'published';
+$$;
+
+create or replace function publish_gift_room(p_manage_token text)
+returns setof gift_rooms
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  published gift_rooms;
+begin
+  update gift_rooms
+  set
+    status = 'published',
+    published_at = coalesce(published_at, now())
+  where manage_token = p_manage_token
+  returning * into published;
+
+  if published.id is null then
+    raise exception '管理链接无效';
+  end if;
+
+  return next published;
+end;
+$$;
+
+create or replace function create_balloon_gift(
+  p_room_id uuid,
+  p_invite_token text,
+  p_giver_name text,
+  p_audio_url text,
+  p_audio_duration_sec numeric,
+  p_average_volume numeric,
+  p_peak_volume numeric,
+  p_transcript text,
+  p_edited_transcript text,
+  p_extra_text text,
+  p_image_urls text[],
+  p_image_bytes bigint,
+  p_balloon_params jsonb
+)
+returns balloon_gifts
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  created balloon_gifts;
+begin
+  insert into balloon_gifts (
+    room_id,
+    giver_name,
+    audio_url,
+    audio_duration_sec,
+    average_volume,
+    peak_volume,
+    transcript,
+    edited_transcript,
+    extra_text,
+    image_urls,
+    image_bytes,
+    balloon_params
+  )
+  select
+    r.id,
+    p_giver_name,
+    p_audio_url,
+    p_audio_duration_sec,
+    p_average_volume,
+    p_peak_volume,
+    p_transcript,
+    p_edited_transcript,
+    coalesce(p_extra_text, ''),
+    coalesce(p_image_urls, '{}'),
+    coalesce(p_image_bytes, 0),
+    p_balloon_params
+  from gift_rooms r
+  where r.id = p_room_id
+    and r.invite_token = p_invite_token
+    and r.status = 'draft'
+  returning * into created;
+
+  if created.id is null then
+    raise exception '邀请链接无效';
+  end if;
+
+  return created;
+end;
+$$;
+
+create or replace function list_gifts_for_manage_token(
+  p_room_id uuid,
+  p_manage_token text
+)
+returns setof balloon_gifts
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select g.*
+  from balloon_gifts g
+  join gift_rooms r on r.id = g.room_id
+  where g.room_id = p_room_id
+    and r.manage_token = p_manage_token
+    and g.deleted_at is null
+  order by g.created_at asc;
+$$;
+
+create or replace function list_published_gifts_for_recipient_token(
+  p_room_id uuid,
+  p_recipient_token text
+)
+returns setof balloon_gifts
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select g.*
+  from balloon_gifts g
+  join gift_rooms r on r.id = g.room_id
+  where g.room_id = p_room_id
+    and r.recipient_token = p_recipient_token
+    and r.status = 'published'
+    and g.deleted_at is null
+  order by g.created_at asc;
+$$;
+
+create or replace function delete_balloon_gift(
+  p_gift_id uuid,
+  p_manage_token text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  deleted_id uuid;
+begin
+  update balloon_gifts g
+  set deleted_at = now()
+  from gift_rooms r
+  where g.id = p_gift_id
+    and g.room_id = r.id
+    and r.manage_token = p_manage_token
+  returning g.id into deleted_id;
+
+  if deleted_id is null then
+    raise exception '管理链接无效';
+  end if;
+end;
+$$;
+
+grant execute on function create_gift_room(text, text, text) to anon;
+grant execute on function get_room_by_invite_token(text) to anon;
+grant execute on function get_room_by_manage_token(text) to anon;
+grant execute on function get_published_room_by_recipient_token(text) to anon;
+grant execute on function publish_gift_room(text) to anon;
+grant execute on function create_balloon_gift(uuid, text, text, text, numeric, numeric, numeric, text, text, text, text[], bigint, jsonb) to anon;
+grant execute on function list_gifts_for_manage_token(uuid, text) to anon;
+grant execute on function list_published_gifts_for_recipient_token(uuid, text) to anon;
+grant execute on function delete_balloon_gift(uuid, text) to anon;
