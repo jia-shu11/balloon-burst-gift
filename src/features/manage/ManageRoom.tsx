@@ -1,0 +1,87 @@
+import { useEffect, useState } from "react";
+import { useRepositories } from "../../data/repositoryProvider";
+import type { BalloonGift, GiftRoom } from "../../domain/types";
+
+function recipientUrl(token: string) {
+  return `${window.location.origin}/r/${token}`;
+}
+
+export function ManageRoom({ room: initialRoom }: { room: GiftRoom }) {
+  const { rooms, gifts } = useRepositories();
+  const [room, setRoom] = useState(initialRoom);
+  const [giftList, setGiftList] = useState<BalloonGift[]>([]);
+  const [error, setError] = useState("");
+
+  async function refresh() {
+    setGiftList(await gifts.listActiveGifts({ roomId: room.id, manageToken: room.manageToken }));
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadGifts() {
+      try {
+        const activeGifts = await gifts.listActiveGifts({ roomId: room.id, manageToken: room.manageToken });
+        if (active) setGiftList(activeGifts);
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : "读取气球失败");
+      }
+    }
+
+    void loadGifts();
+    return () => {
+      active = false;
+    };
+  }, [gifts, room.id, room.manageToken]);
+
+  async function deleteGift(gift: BalloonGift) {
+    setError("");
+    await gifts.deleteGift({ giftId: gift.id, manageToken: room.manageToken });
+    await refresh();
+  }
+
+  async function publish() {
+    setError("");
+    const published = await rooms.publishRoom(room.manageToken);
+    setRoom(published);
+  }
+
+  return (
+    <section className="panel manage-room">
+      <div className="manage-room-header">
+        <div>
+          <h2>{room.title}</h2>
+          <p>收礼者：{room.recipientName}</p>
+        </div>
+        <button type="button" onClick={publish}>
+          发布收礼链接
+        </button>
+      </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
+
+      {giftList.length === 0 ? (
+        <p>当前没有有效气球</p>
+      ) : (
+        <ul className="gift-list">
+          {giftList.map((gift) => (
+            <li key={gift.id}>
+              <strong>{gift.giverName}</strong>
+              <span>{gift.editedTranscript || gift.transcript || gift.extraText || "一段语音祝福"}</span>
+              <button type="button" onClick={() => deleteGift(gift)} aria-label={`删除 ${gift.giverName} 的气球`}>
+                删除
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {room.status === "published" ? (
+        <div className="recipient-link">
+          <strong>收礼链接</strong>
+          <p>{recipientUrl(room.recipientToken)}</p>
+        </div>
+      ) : null}
+    </section>
+  );
+}

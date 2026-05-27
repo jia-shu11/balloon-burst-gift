@@ -219,3 +219,56 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.manage-room {
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+}
+
+.manage-room-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.manage-room-header h2 {
+  margin: 0 0 8px;
+}
+
+.manage-room-header p {
+  margin: 0;
+  color: rgba(248, 251, 255, 0.72);
+}
+
+.gift-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gift-list li {
+  display: grid;
+  grid-template-columns: minmax(96px, 140px) 1fr auto;
+  gap: 14px;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.gift-list span,
+.recipient-link p {
+  overflow-wrap: anywhere;
+  color: rgba(248, 251, 255, 0.78);
+}
+
+.recipient-link {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 18px;
+}
