@@ -12,6 +12,7 @@ describe("in-memory repositories", () => {
 
     expect(room.status).toBe("draft");
     expect(room.inviteToken).not.toEqual(room.manageToken);
+    expect(room.inviteToken).not.toEqual(room.recipientToken);
     expect(room.recipientToken).not.toEqual(room.manageToken);
   });
 
