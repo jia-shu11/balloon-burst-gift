@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BalloonGift, GiftRoom } from "../../domain/types";
 import { RecipientStage } from "./RecipientStage";
 
@@ -46,8 +46,31 @@ const gift: BalloonGift = {
   }
 };
 
+function createFakeCanvasContext() {
+  return {
+    save: vi.fn(),
+    restore: vi.fn(),
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    bezierCurveTo: vi.fn(),
+    closePath: vi.fn(),
+    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    fill: vi.fn(),
+    stroke: vi.fn(),
+    ellipse: vi.fn(),
+    quadraticCurveTo: vi.fn(),
+    setTransform: vi.fn(),
+    clearRect: vi.fn()
+  } as unknown as CanvasRenderingContext2D;
+}
+
+beforeEach(() => {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(createFakeCanvasContext());
+});
+
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("RecipientStage", () => {

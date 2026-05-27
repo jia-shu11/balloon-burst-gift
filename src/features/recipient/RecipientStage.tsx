@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { type MouseEvent, useMemo, useRef, useState } from "react";
 import type { BalloonGift, GiftRoom } from "../../domain/types";
 import { createBalloonLayout } from "../../visual/balloonLayout";
 import { createBurstFragments, type Fragment } from "../../visual/fragments";
+import { hitTestBalloon, useCanvasBalloons } from "./useCanvasBalloons";
 
 function defaultPlayAudio(url: string) {
   const audio = new Audio(url);
@@ -24,7 +25,9 @@ export function RecipientStage({
 }) {
   const [burstIds, setBurstIds] = useState<Set<string>>(() => new Set());
   const [fragments, setFragments] = useState<Fragment[]>([]);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const layout = useMemo(() => createBalloonLayout(gifts, { width: 1200, height: 720 }), [gifts]);
+  useCanvasBalloons(canvasRef, layout, burstIds);
 
   function burstGift(gift: BalloonGift, x: number, y: number) {
     if (burstIds.has(gift.id)) return;
@@ -42,6 +45,20 @@ export function RecipientStage({
     ]);
   }
 
+  function handleCanvasClick(event: MouseEvent<HTMLCanvasElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 1200;
+    const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * 720;
+    const hitId = hitTestBalloon(
+      layout
+        .filter((item) => !burstIds.has(item.gift.id))
+        .map((item) => ({ id: item.gift.id, x: item.x, y: item.y, radius: item.gift.balloonParams.radius })),
+      { x, y }
+    );
+    const item = layout.find((candidate) => candidate.gift.id === hitId);
+    if (item) burstGift(item.gift, item.x, item.y);
+  }
+
   return (
     <section className="recipient-stage" aria-label={`${room.title} 收礼现场`}>
       <div className="stage-topbar">
@@ -49,18 +66,13 @@ export function RecipientStage({
         <span>{gifts.length} 个匿名气球</span>
       </div>
       <div className="stage-field">
+        <canvas ref={canvasRef} className="balloon-canvas" onClick={handleCanvasClick} />
         {layout.map((item, index) =>
           burstIds.has(item.gift.id) ? null : (
             <button
               key={item.gift.id}
               type="button"
-              className="stage-balloon-hotspot"
-              style={{
-                left: `${(item.x / 1200) * 100}%`,
-                top: `${(item.y / 720) * 100}%`,
-                width: item.gift.balloonParams.radius * 2,
-                height: item.gift.balloonParams.radius * 2
-              }}
+              className="sr-only"
               aria-label={`爆破匿名气球 ${index + 1}`}
               onClick={() => burstGift(item.gift, item.x, item.y)}
             />

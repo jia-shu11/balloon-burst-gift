@@ -300,6 +300,14 @@ button:disabled {
   inset: 0;
 }
 
+.balloon-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
 .stage-balloon-hotspot {
   position: absolute;
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -346,4 +354,16 @@ button:disabled {
   z-index: 4;
   right: 24px;
   bottom: 24px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
