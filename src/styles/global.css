@@ -1,0 +1,35 @@
+:root {
+  color: #f8fbff;
+  background: #080a10;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 64, 130, 0.22), transparent 28%),
+    radial-gradient(circle at 78% 16%, rgba(51, 220, 205, 0.18), transparent 30%),
+    linear-gradient(145deg, #080a10, #12151f 56%, #080a10);
+}
+
+a {
+  color: #8cf4ff;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+.page {
+  width: min(1080px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 56px 0;
+}
