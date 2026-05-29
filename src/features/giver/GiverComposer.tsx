@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRepositories } from "../../data/repositoryProvider";
 import { uploadGiftFile } from "../../data/storage";
 import { createSupabaseBrowserClient } from "../../data/supabaseClient";
@@ -39,6 +39,10 @@ function createMediaId() {
   return crypto.randomUUID();
 }
 
+function getPerformanceNowMs() {
+  return performance.now();
+}
+
 function shouldUseSupabaseStorage() {
   return import.meta.env.VITE_REPOSITORY_MODE === "supabase";
 }
@@ -75,7 +79,7 @@ export function GiverComposer({
   uploadImages = defaultUploadImages,
   recorder: providedRecorder,
   startTranscription = startBrowserSpeechTranscription,
-  nowMs = () => performance.now(),
+  nowMs = getPerformanceNowMs,
   onSubmitted
 }: {
   room: GiftRoom;
@@ -98,6 +102,7 @@ export function GiverComposer({
   const [recording, setRecording] = useState<RecordingDraft | null>(initialRecording);
   const [level, setLevel] = useState(initialRecording?.averageVolume ?? 0.2);
   const [recordingActive, setRecordingActive] = useState(false);
+  const [recordingElapsedSec, setRecordingElapsedSec] = useState(initialRecording?.durationSec ?? 0);
   const [stopMeter, setStopMeter] = useState<(() => void) | null>(null);
   const [stopTranscription, setStopTranscription] = useState<(() => void) | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -107,11 +112,28 @@ export function GiverComposer({
   const recordingStartedAtRef = useRef<number | null>(null);
 
   const imageBytes = imageFiles.reduce((total, file) => total + file.size, 0);
+  const previewAudioDurationSec = recording?.durationSec ?? (recordingActive ? recordingElapsedSec : 0);
+
+  useEffect(() => {
+    if (!recordingActive) return undefined;
+
+    const updateElapsed = () => {
+      const startedAtMs = recordingStartedAtRef.current;
+      if (startedAtMs === null) return;
+      const elapsedSec = Math.max(0, (nowMs() - startedAtMs) / 1000);
+      setRecordingElapsedSec(Number(elapsedSec.toFixed(2)));
+    };
+
+    updateElapsed();
+    const intervalId = window.setInterval(updateElapsed, 80);
+    return () => window.clearInterval(intervalId);
+  }, [nowMs, recordingActive]);
+
   const previewParams = useMemo(
     () =>
       generateBalloonParams({
         seed: `${room.id}:${giverName || "preview"}`,
-        audioDurationSec: recording?.durationSec ?? (recordingActive ? 18 : 8),
+        audioDurationSec: previewAudioDurationSec,
         averageVolume: recording?.averageVolume ?? level,
         peakVolume: recording?.peakVolume ?? level,
         transcriptChars: transcript.length,
@@ -119,7 +141,17 @@ export function GiverComposer({
         imageCount: imageFiles.length,
         imageBytes
       }),
-    [extraText.length, giverName, imageBytes, imageFiles.length, level, recording, recordingActive, room.id, transcript.length]
+    [
+      extraText.length,
+      giverName,
+      imageBytes,
+      imageFiles.length,
+      level,
+      previewAudioDurationSec,
+      recording,
+      room.id,
+      transcript.length
+    ]
   );
 
   async function startRecording() {
@@ -128,6 +160,7 @@ export function GiverComposer({
     setError("");
     setMessage("");
     setRecording(null);
+    setRecordingElapsedSec(0);
     samplesRef.current = [];
     recordingStartedAtRef.current = nowMs();
 
@@ -145,6 +178,7 @@ export function GiverComposer({
       setRecordingActive(true);
     } catch (caught) {
       recordingStartedAtRef.current = null;
+      setRecordingElapsedSec(0);
       setError(caught instanceof Error ? caught.message : "无法开始录音");
     }
   }
@@ -171,6 +205,7 @@ export function GiverComposer({
         averageVolume: summary.averageVolume,
         peakVolume: summary.peakVolume
       });
+      setRecordingElapsedSec(summary.durationSec);
       setLevel(summary.averageVolume || level);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "无法结束录音");

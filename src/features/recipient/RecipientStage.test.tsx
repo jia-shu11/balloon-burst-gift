@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import type { BalloonGift, GiftRoom } from "../../domain/types";
 import { RecipientStage } from "./RecipientStage";
 
@@ -70,24 +71,87 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
+function renderStage(gifts: BalloonGift[], playAudio = vi.fn()) {
+  return render(
+    <MemoryRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
+      <RecipientStage room={room} gifts={gifts} playAudio={playAudio} />
+    </MemoryRouter>
+  );
+}
+
 describe("RecipientStage", () => {
   it("renders anonymous balloon count and exposes burst all control", () => {
-    render(<RecipientStage room={room} gifts={[gift]} playAudio={vi.fn()} />);
+    renderStage([gift]);
 
     expect(screen.getByText("1 个匿名气球")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "长按蓄能，全场爆炸" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "退出现场" })).not.toBeInTheDocument();
   });
 
   it("bursts a balloon and reveals signature fragments", () => {
     const playAudio = vi.fn();
-    render(<RecipientStage room={room} gifts={[gift]} playAudio={playAudio} />);
+    renderStage([gift], playAudio);
 
     fireEvent.click(screen.getByLabelText("爆破匿名气球 1"));
 
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(playAudio).toHaveBeenCalledWith("audio.webm");
+  });
+
+  it("bursts immediately with a restrained latex rupture effect", () => {
+    vi.useFakeTimers();
+    const playAudio = vi.fn();
+    const { container } = renderStage([gift], playAudio);
+
+    fireEvent.click(screen.getByLabelText("爆破匿名气球 1"));
+
+    expect(screen.getByRole("img", { name: "Alice 的气球破裂动画" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("爆破匿名气球 1")).not.toBeInTheDocument();
+    expect(container.querySelector(".burst-spark")).not.toBeInTheDocument();
+    expect(container.querySelector(".rupture-shard")).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(260);
+    });
+
+    expect(screen.queryByRole("img", { name: "Alice 的气球破裂动画" })).not.toBeInTheDocument();
+  });
+
+  it("shows a prepared empty state instead of a blank burst scene", () => {
+    renderStage([]);
+
+    expect(screen.getByText("礼物还在准备中")).toBeInTheDocument();
+    expect(screen.getByText("0 个匿名气球")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "长按蓄能，全场爆炸" })).not.toBeInTheDocument();
+  });
+
+  it("requires a long press before bursting every balloon and does not play audio", () => {
+    vi.useFakeTimers();
+    const playAudio = vi.fn();
+    renderStage([gift], playAudio);
+
+    const burstAllButton = screen.getByRole("button", { name: "长按蓄能，全场爆炸" });
+
+    fireEvent.pointerDown(burstAllButton);
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    fireEvent.pointerUp(burstAllButton);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+
+    fireEvent.pointerDown(burstAllButton);
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(playAudio).not.toHaveBeenCalled();
   });
 });

@@ -49,4 +49,11 @@ describe("createBurstFragments", () => {
 
     expect(updated).toHaveLength(fragments.length);
   });
+
+  it("omits playable waveform fragments during burst-all", () => {
+    const fragments = createBurstFragments(gift, { x: 400, y: 300 }, true);
+
+    expect(fragments.some((fragment) => fragment.kind === "waveform")).toBe(false);
+    expect(fragments.some((fragment) => fragment.kind === "text")).toBe(true);
+  });
 });

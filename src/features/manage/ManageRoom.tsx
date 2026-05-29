@@ -47,9 +47,15 @@ export function ManageRoom({ room: initialRoom }: { room: GiftRoom }) {
 
   async function publish() {
     setError("");
+    if (giftList.length === 0) {
+      setError("至少收到一个气球后再发布收礼链接。");
+      return;
+    }
     const published = await rooms.publishRoom(room.manageToken);
     setRoom(published);
   }
+
+  const publishDisabled = room.status === "published" || giftList.length === 0;
 
   return (
     <section className="panel manage-room">
@@ -58,12 +64,15 @@ export function ManageRoom({ room: initialRoom }: { room: GiftRoom }) {
           <h2>{room.title}</h2>
           <p>收礼者：{room.recipientName}</p>
         </div>
-        <button type="button" onClick={publish}>
-          发布收礼链接
+        <button type="button" onClick={publish} disabled={publishDisabled}>
+          {room.status === "published" ? "已发布收礼链接" : "发布收礼链接"}
         </button>
       </div>
 
       {error ? <p className="error-text">{error}</p> : null}
+      {giftList.length === 0 && room.status !== "published" ? (
+        <p className="muted-text">至少收到一个气球后再发布收礼链接。</p>
+      ) : null}
 
       {giftList.length === 0 ? (
         <p>当前没有有效气球</p>

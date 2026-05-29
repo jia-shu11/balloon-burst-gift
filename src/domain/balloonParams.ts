@@ -1,5 +1,9 @@
 import type { BalloonParams, GiftInputMetrics } from "./types";
 
+const MIN_BALLOON_RADIUS = 42;
+const MAX_BALLOON_RADIUS = 260;
+const AUDIO_INFLATION_PER_SECOND = 0.5;
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -22,6 +26,10 @@ function seededUnit(seed: string, salt: number) {
   return x - Math.floor(x);
 }
 
+export function getAudioInflationScale(audioDurationSec: number) {
+  return Number((1 + finiteNonNegative(audioDurationSec) * AUDIO_INFLATION_PER_SECOND).toFixed(3));
+}
+
 export function generateBalloonParams(metrics: GiftInputMetrics): BalloonParams {
   const audioDurationSec = finiteNonNegative(metrics.audioDurationSec);
   const averageVolume = finiteNonNegative(metrics.averageVolume);
@@ -31,18 +39,23 @@ export function generateBalloonParams(metrics: GiftInputMetrics): BalloonParams 
   const imageCount = finiteNonNegative(metrics.imageCount);
   const imageBytes = finiteNonNegative(metrics.imageBytes);
 
-  const durationScore = clamp(audioDurationSec / 75, 0, 1);
+  const durationScore = clamp(audioDurationSec / 6, 0, 1);
   const transcriptScore = clamp(transcriptChars / 800, 0, 1);
   const textScore = clamp(extraTextChars / 500, 0, 1);
   const imageCountScore = clamp(imageCount / 5, 0, 1);
   const imageBytesScore = clamp(imageBytes / 4_000_000, 0, 1);
   const imageScore = clamp(imageCountScore + imageBytesScore, 0, 1);
-  const dataScore = clamp(durationScore * 0.62 + transcriptScore * 0.14 + textScore * 0.1 + imageScore * 0.14, 0, 1);
+  const supplementalScore = clamp(transcriptScore * 0.35 + textScore * 0.25 + imageScore * 0.4, 0, 1);
+  const dataScore = clamp(durationScore * 0.58 + supplementalScore * 0.42, 0, 1);
   const volumeScore = clamp(averageVolume * 0.65 + peakVolume * 0.35, 0, 1);
   const variance = (seededUnit(metrics.seed, 1) - 0.5) * 10;
+  const baseRadius = clamp(48 + supplementalScore * 28 + variance, MIN_BALLOON_RADIUS, 88);
+  const radius = Number(
+    clamp(baseRadius * getAudioInflationScale(audioDurationSec), MIN_BALLOON_RADIUS, MAX_BALLOON_RADIUS).toFixed(2)
+  );
 
   return {
-    radius: Math.round(clamp(48 + dataScore * 78 + variance, 42, 132)),
+    radius,
     stretchX: Number((0.88 + seededUnit(metrics.seed, 2) * 0.26).toFixed(3)),
     stretchY: Number((1.02 + seededUnit(metrics.seed, 3) * 0.28 + dataScore * 0.12).toFixed(3)),
     wobble: Number(clamp(0.1 + volumeScore * 0.8, 0.1, 1).toFixed(3)),
@@ -51,7 +64,7 @@ export function generateBalloonParams(metrics: GiftInputMetrics): BalloonParams 
     floatSpeed: Number((0.18 + seededUnit(metrics.seed, 4) * 0.42).toFixed(3)),
     stringLength: Math.round(42 + seededUnit(metrics.seed, 5) * 72),
     fragmentCount: Math.round(clamp(8 + dataScore * 22 + imageScore * 6, 8, 36)),
-    burstRadius: Math.round(clamp(120 + dataScore * 220, 120, 340)),
+    burstRadius: Math.round(clamp(radius * 2.2 + dataScore * 90, 120, 560)),
     hue: Math.round((320 + seededUnit(metrics.seed, 6) * 190) % 360)
   };
 }

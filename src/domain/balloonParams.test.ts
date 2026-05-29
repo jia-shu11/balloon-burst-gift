@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { generateBalloonParams } from "./balloonParams";
+import { generateBalloonParams, getAudioInflationScale } from "./balloonParams";
 
 describe("generateBalloonParams", () => {
   it("uses audio duration as the primary size source for audio-only gifts", () => {
     const shortGift = generateBalloonParams({
       seed: "short",
-      audioDurationSec: 8,
+      audioDurationSec: 1,
       averageVolume: 0.4,
       peakVolume: 0.7,
       transcriptChars: 0,
@@ -16,7 +16,7 @@ describe("generateBalloonParams", () => {
 
     const longGift = generateBalloonParams({
       seed: "long",
-      audioDurationSec: 55,
+      audioDurationSec: 3,
       averageVolume: 0.4,
       peakVolume: 0.7,
       transcriptChars: 0,
@@ -29,10 +29,52 @@ describe("generateBalloonParams", () => {
     expect(shortGift.surfaceWaveDensity).toBeLessThanOrEqual(longGift.surfaceWaveDensity);
   });
 
+  it("inflates audio-only balloon size by half of its base size every second before clamping", () => {
+    expect(getAudioInflationScale(0)).toBe(1);
+    expect(getAudioInflationScale(1)).toBe(1.5);
+    expect(getAudioInflationScale(2)).toBe(2);
+
+    const baseGift = generateBalloonParams({
+      seed: "paced-audio",
+      audioDurationSec: 0,
+      averageVolume: 0.4,
+      peakVolume: 0.7,
+      transcriptChars: 0,
+      extraTextChars: 0,
+      imageCount: 0,
+      imageBytes: 0
+    });
+
+    const oneSecondGift = generateBalloonParams({
+      seed: "paced-audio",
+      audioDurationSec: 1,
+      averageVolume: 0.4,
+      peakVolume: 0.7,
+      transcriptChars: 0,
+      extraTextChars: 0,
+      imageCount: 0,
+      imageBytes: 0
+    });
+
+    const twoSecondGift = generateBalloonParams({
+      seed: "paced-audio",
+      audioDurationSec: 2,
+      averageVolume: 0.4,
+      peakVolume: 0.7,
+      transcriptChars: 0,
+      extraTextChars: 0,
+      imageCount: 0,
+      imageBytes: 0
+    });
+
+    expect(oneSecondGift.radius).toBeCloseTo(baseGift.radius * 1.5, 1);
+    expect(twoSecondGift.radius).toBeCloseTo(baseGift.radius * 2, 1);
+  });
+
   it("adds extra inflation for mixed text and image data", () => {
     const audioOnly = generateBalloonParams({
       seed: "same",
-      audioDurationSec: 30,
+      audioDurationSec: 2,
       averageVolume: 0.35,
       peakVolume: 0.6,
       transcriptChars: 0,
@@ -43,7 +85,7 @@ describe("generateBalloonParams", () => {
 
     const mixed = generateBalloonParams({
       seed: "same",
-      audioDurationSec: 30,
+      audioDurationSec: 2,
       averageVolume: 0.35,
       peakVolume: 0.6,
       transcriptChars: 260,
@@ -69,7 +111,7 @@ describe("generateBalloonParams", () => {
       imageBytes: 90_000_000
     });
 
-    expect(params.radius).toBeLessThanOrEqual(132);
+    expect(params.radius).toBeLessThanOrEqual(260);
     expect(params.fragmentCount).toBeLessThanOrEqual(36);
     expect(params.glow).toBeLessThanOrEqual(1);
   });
@@ -88,7 +130,7 @@ describe("generateBalloonParams", () => {
 
     expect(Object.values(params).every(Number.isFinite)).toBe(true);
     expect(params.radius).toBeGreaterThanOrEqual(42);
-    expect(params.radius).toBeLessThanOrEqual(132);
+    expect(params.radius).toBeLessThanOrEqual(260);
     expect(params.fragmentCount).toBeGreaterThanOrEqual(8);
     expect(params.fragmentCount).toBeLessThanOrEqual(36);
     expect(params.glow).toBeGreaterThanOrEqual(0.25);

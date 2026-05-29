@@ -323,3 +323,21 @@ grant execute on function create_balloon_gift(uuid, text, text, text, numeric, n
 grant execute on function list_gifts_for_manage_token(uuid, text) to anon;
 grant execute on function list_published_gifts_for_recipient_token(uuid, text) to anon;
 grant execute on function delete_balloon_gift(uuid, text) to anon;
+
+insert into storage.buckets (id, name, public)
+values ('gift-media', 'gift-media', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "gift media public read" on storage.objects;
+create policy "gift media public read"
+on storage.objects
+for select
+to anon
+using (bucket_id = 'gift-media');
+
+drop policy if exists "gift media anonymous upload" on storage.objects;
+create policy "gift media anonymous upload"
+on storage.objects
+for insert
+to anon
+with check (bucket_id = 'gift-media');

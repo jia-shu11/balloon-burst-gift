@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/gift/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/manage/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/r/:path*",
+      "destination": "/index.html"
+    }
+  ]
+}

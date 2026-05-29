@@ -7,12 +7,44 @@ function absolutePath(path: string) {
   return `${window.location.origin}${path}`;
 }
 
+const LAST_CREATED_ROOM_KEY = "balloon-burst-gift:last-created-room";
+
+function isGiftRoom(value: unknown): value is GiftRoom {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<GiftRoom>;
+  return (
+    typeof candidate.id === "string" &&
+    typeof candidate.title === "string" &&
+    typeof candidate.inviteToken === "string" &&
+    typeof candidate.manageToken === "string"
+  );
+}
+
+function readLastCreatedRoom() {
+  try {
+    const raw = sessionStorage.getItem(LAST_CREATED_ROOM_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown;
+    return isGiftRoom(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberCreatedRoom(room: GiftRoom) {
+  try {
+    sessionStorage.setItem(LAST_CREATED_ROOM_KEY, JSON.stringify(room));
+  } catch {
+    // Link display is helpful, but storage failure should not block room creation.
+  }
+}
+
 export function HomePage() {
   const { rooms } = useRepositories();
   const [title, setTitle] = useState("");
   const [recipientName, setRecipientName] = useState("");
   const [promptText, setPromptText] = useState("");
-  const [createdRoom, setCreatedRoom] = useState<GiftRoom | null>(null);
+  const [createdRoom, setCreatedRoom] = useState<GiftRoom | null>(() => readLastCreatedRoom());
   const [error, setError] = useState("");
 
   async function handleSubmit(event: FormEvent) {
@@ -29,6 +61,7 @@ export function HomePage() {
       recipientName: recipientName.trim(),
       promptText: promptText.trim()
     });
+    rememberCreatedRoom(room);
     setCreatedRoom(room);
   }
 

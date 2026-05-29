@@ -10,9 +10,28 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: GiftRepository } {
-  const roomsById = new Map<string, GiftRoom>();
-  const giftsById = new Map<string, BalloonGift>();
+export interface InMemoryRepositorySnapshot {
+  rooms: GiftRoom[];
+  gifts: BalloonGift[];
+}
+
+export interface InMemoryRepositoryOptions {
+  snapshot?: InMemoryRepositorySnapshot;
+  onChange?: (snapshot: InMemoryRepositorySnapshot) => void;
+}
+
+export function createInMemoryRepositories(
+  options: InMemoryRepositoryOptions = {}
+): { rooms: RoomRepository; gifts: GiftRepository } {
+  const roomsById = new Map<string, GiftRoom>((options.snapshot?.rooms ?? []).map((room) => [room.id, room]));
+  const giftsById = new Map<string, BalloonGift>((options.snapshot?.gifts ?? []).map((gift) => [gift.id, gift]));
+
+  function persist() {
+    options.onChange?.({
+      rooms: [...roomsById.values()],
+      gifts: [...giftsById.values()]
+    });
+  }
 
   const rooms: RoomRepository = {
     async createRoom(input: CreateRoomInput) {
@@ -29,6 +48,7 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
         publishedAt: null
       };
       roomsById.set(room.id, room);
+      persist();
       return room;
     },
     async getRoomByInviteToken(inviteToken: string) {
@@ -49,6 +69,7 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
       if (!room) throw new Error("管理链接无效");
       const published: GiftRoom = { ...room, status: "published", publishedAt: room.publishedAt ?? nowIso() };
       roomsById.set(published.id, published);
+      persist();
       return published;
     }
   };
@@ -85,6 +106,7 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
         createdAt: nowIso()
       };
       giftsById.set(gift.id, gift);
+      persist();
       return gift;
     },
     async listActiveGifts(input: { roomId: string; manageToken?: string; recipientToken?: string }) {
@@ -101,6 +123,7 @@ export function createInMemoryRepositories(): { rooms: RoomRepository; gifts: Gi
       const room = roomsById.get(gift.roomId);
       if (!room || room.manageToken !== input.manageToken) throw new Error("管理链接无效");
       giftsById.set(input.giftId, { ...gift, deletedAt: nowIso() });
+      persist();
     }
   };
 

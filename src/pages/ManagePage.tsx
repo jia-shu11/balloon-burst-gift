@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { useRepositories } from "../data/repositoryProvider";
 import type { GiftRoom } from "../domain/types";
 import { ManageRoom } from "../features/manage/ManageRoom";
@@ -29,6 +29,9 @@ export function ManagePage() {
   if (missing) {
     return (
       <main className="page">
+        <Link className="page-back-link" to="/">
+          返回首页
+        </Link>
         <h1>管理礼物房间</h1>
         <p>管理链接无效，或者这个房间不存在。</p>
       </main>
@@ -37,6 +40,9 @@ export function ManagePage() {
 
   return (
     <main className="page">
+      <Link className="page-back-link" to="/">
+        返回首页
+      </Link>
       <h1>管理礼物房间</h1>
       {room ? <ManageRoom room={room} /> : <p>正在读取房间...</p>}
     </main>

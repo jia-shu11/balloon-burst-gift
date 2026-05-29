@@ -2,17 +2,26 @@ import { RefObject, useEffect } from "react";
 import type { LaidOutBalloon } from "../../visual/balloonLayout";
 import { drawBalloon } from "../../visual/drawBalloon";
 
+const STAGE_WIDTH = 1200;
+const STAGE_HEIGHT = 720;
+
 export interface HitTarget {
   id: string;
   x: number;
   y: number;
   radius: number;
+  stretchX?: number;
+  stretchY?: number;
 }
 
 export function hitTestBalloon(targets: HitTarget[], point: { x: number; y: number }) {
   for (let index = targets.length - 1; index >= 0; index -= 1) {
     const target = targets[index];
-    if (Math.hypot(point.x - target.x, point.y - target.y) <= target.radius) {
+    const radiusX = target.radius * (target.stretchX ?? 1);
+    const radiusY = target.radius * (target.stretchY ?? 1);
+    const normalizedDistance =
+      (point.x - target.x) ** 2 / radiusX ** 2 + (point.y - target.y) ** 2 / radiusY ** 2;
+    if (normalizedDistance <= 1) {
       return target.id;
     }
   }
@@ -43,13 +52,11 @@ export function useCanvasBalloons(
     let animationId = 0;
 
     function render() {
-      const width = activeCanvas.clientWidth || 1200;
-      const height = activeCanvas.clientHeight || 720;
       const ratio = window.devicePixelRatio || 1;
-      activeCanvas.width = width * ratio;
-      activeCanvas.height = height * ratio;
+      activeCanvas.width = STAGE_WIDTH * ratio;
+      activeCanvas.height = STAGE_HEIGHT * ratio;
       activeCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      activeCtx.clearRect(0, 0, width, height);
+      activeCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
 
       for (const item of layout) {
         if (burstIds.has(item.gift.id)) continue;

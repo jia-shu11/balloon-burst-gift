@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo } from "react";
 import type { GiftRepository, RoomRepository } from "./contracts";
 import { createSupabaseGiftRepository } from "./giftRepository";
-import { createInMemoryRepositories } from "./inMemoryRepositories";
+import { createLocalStorageRepositories } from "./localStorageRepositories";
 import { createSupabaseRoomRepository } from "./roomRepository";
 import { createSupabaseBrowserClient } from "./supabaseClient";
 
@@ -10,10 +10,22 @@ export interface Repositories {
   gifts: GiftRepository;
 }
 
+interface RepositoryModeEnv {
+  PROD?: boolean;
+  VITE_REPOSITORY_MODE?: string;
+}
+
 const RepositoryContext = createContext<Repositories | null>(null);
 
+export function resolveRepositoryMode(env: RepositoryModeEnv): "local" | "supabase" {
+  const mode = env.VITE_REPOSITORY_MODE?.trim().toLowerCase();
+  if (mode === "supabase") return "supabase";
+  if (mode === "local" || mode === "localstorage" || mode === "memory" || mode === "demo") return "local";
+  return env.PROD ? "supabase" : "local";
+}
+
 function createDefaultRepositories(): Repositories {
-  if (import.meta.env.VITE_REPOSITORY_MODE === "supabase") {
+  if (resolveRepositoryMode(import.meta.env) === "supabase") {
     const client = createSupabaseBrowserClient();
     return {
       rooms: createSupabaseRoomRepository(client),
@@ -21,7 +33,7 @@ function createDefaultRepositories(): Repositories {
     };
   }
 
-  return createInMemoryRepositories();
+  return createLocalStorageRepositories();
 }
 
 export function RepositoryProvider({

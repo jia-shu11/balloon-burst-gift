@@ -47,7 +47,7 @@ export function createBurstFragments(gift: BalloonGift, origin: Point, burstAll:
     ...transcriptPieces.map((content) => ({ kind: "text" as const, content })),
     ...extraPieces.map((content) => ({ kind: "extraText" as const, content })),
     ...gift.imageUrls.map((content) => ({ kind: "image" as const, content })),
-    { kind: "waveform", content: gift.audioUrl },
+    ...(burstAll ? [] : [{ kind: "waveform" as const, content: gift.audioUrl }]),
     { kind: "signature", content: gift.giverName }
   ];
 
