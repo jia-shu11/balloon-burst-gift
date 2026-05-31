@@ -46,6 +46,7 @@ export function HomePage() {
   const [promptText, setPromptText] = useState("");
   const [createdRoom, setCreatedRoom] = useState<GiftRoom | null>(() => readLastCreatedRoom());
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -56,13 +57,20 @@ export function HomePage() {
       return;
     }
 
-    const room = await rooms.createRoom({
-      title: title.trim(),
-      recipientName: recipientName.trim(),
-      promptText: promptText.trim()
-    });
-    rememberCreatedRoom(room);
-    setCreatedRoom(room);
+    setSubmitting(true);
+    try {
+      const room = await rooms.createRoom({
+        title: title.trim(),
+        recipientName: recipientName.trim(),
+        promptText: promptText.trim()
+      });
+      rememberCreatedRoom(room);
+      setCreatedRoom(room);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "创建房间失败，请稍后再试");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -86,7 +94,9 @@ export function HomePage() {
           <textarea value={promptText} onChange={(event) => setPromptText(event.target.value)} rows={3} />
         </label>
         {error ? <p className="error-text">{error}</p> : null}
-        <button type="submit">创建礼物房间</button>
+        <button type="submit" disabled={submitting}>
+          {submitting ? "正在创建..." : "创建礼物房间"}
+        </button>
       </form>
 
       {createdRoom ? (

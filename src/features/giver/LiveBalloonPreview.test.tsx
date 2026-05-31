@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { BalloonParams } from "../../domain/types";
 import { LiveBalloonPreview } from "./LiveBalloonPreview";
@@ -61,5 +61,14 @@ describe("LiveBalloonPreview", () => {
 
     expect(preview.querySelector(".live-balloon-rim")).toBeNull();
     expect(preview.querySelector(".live-balloon-wave")).toBeNull();
+  });
+
+  it("lets the giver tap the preview balloon for a soft rebound", () => {
+    render(<LiveBalloonPreview params={params} level={0.3} />);
+
+    const preview = screen.getByLabelText("实时鼓胀气球预览");
+    fireEvent.click(screen.getByRole("button", { name: "轻触气球预览" }));
+
+    expect(preview).toHaveClass("is-poked");
   });
 });

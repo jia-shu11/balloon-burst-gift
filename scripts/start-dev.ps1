@@ -37,7 +37,7 @@ function Find-AvailablePort([int]$PreferredPort) {
 
 function Ensure-EnvFile([string]$ProjectRoot, [bool]$SupabaseMode) {
   $envPath = Join-Path $ProjectRoot ".env.local"
-  $mode = if ($SupabaseMode) { "supabase" } else { "memory" }
+  $mode = if ($SupabaseMode) { "supabase" } else { "local" }
 
   if (-not (Test-Path -LiteralPath $envPath)) {
     @(
@@ -55,7 +55,13 @@ function Ensure-EnvFile([string]$ProjectRoot, [bool]$SupabaseMode) {
     Add-Content -LiteralPath $envPath -Value "`nVITE_REPOSITORY_MODE=$mode"
     Write-Step "Added VITE_REPOSITORY_MODE=$mode to .env.local."
   } else {
-    Write-Step ".env.local already exists; keeping its repository mode."
+    $updatedEnvText = $envText -replace "(?m)^VITE_REPOSITORY_MODE=.*$", "VITE_REPOSITORY_MODE=$mode"
+    if ($updatedEnvText -ne $envText) {
+      Set-Content -LiteralPath $envPath -Value $updatedEnvText -Encoding UTF8
+      Write-Step "Set VITE_REPOSITORY_MODE=$mode in .env.local."
+    } else {
+      Write-Step ".env.local already uses VITE_REPOSITORY_MODE=$mode."
+    }
   }
 }
 

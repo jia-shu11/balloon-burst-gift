@@ -1,4 +1,5 @@
 export type RoomStatus = "draft" | "published";
+export type BalloonMood = "gentle" | "bright" | "playful" | "secret" | "celebrate";
 
 export interface GiftRoom {
   id: string;
@@ -47,6 +48,7 @@ export interface BalloonParams {
 
 export interface GiftInputMetrics {
   seed: string;
+  mood?: BalloonMood;
   audioDurationSec: number;
   averageVolume: number;
   peakVolume: number;

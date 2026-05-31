@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { BalloonParams } from "../../domain/types";
 
 const PREVIEW_SAFE_WIDTH = 360;
@@ -10,13 +11,20 @@ export function getPreviewFitScale(width: number, height: number, stringLength: 
 }
 
 export function LiveBalloonPreview({ params, level }: { params: BalloonParams; level: number }) {
+  const [poked, setPoked] = useState(false);
   const width = params.radius * 2 * params.stretchX;
   const height = params.radius * 2 * params.stretchY;
   const glow = 18 + params.glow * 42 + level * 20;
   const fitScale = getPreviewFitScale(width, height, params.stringLength);
 
+  useEffect(() => {
+    if (!poked) return undefined;
+    const timer = window.setTimeout(() => setPoked(false), 320);
+    return () => window.clearTimeout(timer);
+  }, [poked]);
+
   return (
-    <div className="live-balloon-wrap" aria-label="实时鼓胀气球预览">
+    <div className={`live-balloon-wrap${poked ? " is-poked" : ""}`} aria-label="实时鼓胀气球预览">
       <div
         className="live-balloon-assembly"
         style={{
@@ -24,8 +32,11 @@ export function LiveBalloonPreview({ params, level }: { params: BalloonParams; l
           ["--balloon-hue" as string]: params.hue
         }}
       >
-        <div
+        <button
+          type="button"
           className="live-balloon"
+          aria-label="轻触气球预览"
+          onClick={() => setPoked(true)}
           style={{
             width,
             height,
@@ -36,7 +47,7 @@ export function LiveBalloonPreview({ params, level }: { params: BalloonParams; l
         >
           <div className="live-balloon-highlight" />
           <div className="live-balloon-neck" />
-        </div>
+        </button>
         <div className="live-balloon-knot" />
         <div className="live-balloon-string" style={{ height: params.stringLength }} />
       </div>

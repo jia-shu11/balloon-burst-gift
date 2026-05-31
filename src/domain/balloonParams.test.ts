@@ -136,4 +136,30 @@ describe("generateBalloonParams", () => {
     expect(params.glow).toBeGreaterThanOrEqual(0.25);
     expect(params.glow).toBeLessThanOrEqual(1);
   });
+
+  it("uses the selected mood as a stable color and motion bias", () => {
+    const baseMetrics = {
+      seed: "mood-sync",
+      audioDurationSec: 8,
+      averageVolume: 0.5,
+      peakVolume: 0.8,
+      transcriptChars: 80,
+      extraTextChars: 20,
+      imageCount: 1,
+      imageBytes: 600_000
+    };
+
+    const gentle = generateBalloonParams({ ...baseMetrics, mood: "gentle" });
+    const playful = generateBalloonParams({ ...baseMetrics, mood: "playful" });
+    const secret = generateBalloonParams({ ...baseMetrics, mood: "secret" });
+
+    expect(gentle.hue).toBeGreaterThanOrEqual(130);
+    expect(gentle.hue).toBeLessThanOrEqual(180);
+    expect(playful.hue).toBeGreaterThanOrEqual(300);
+    expect(playful.hue).toBeLessThanOrEqual(345);
+    expect(secret.hue).toBeGreaterThanOrEqual(220);
+    expect(secret.hue).toBeLessThanOrEqual(270);
+    expect(playful.wobble).toBeGreaterThan(gentle.wobble);
+    expect(secret.floatSpeed).toBeLessThan(playful.floatSpeed);
+  });
 });

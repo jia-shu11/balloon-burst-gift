@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryRepositories } from "../data/inMemoryRepositories";
 import { RepositoryProvider } from "../data/repositoryProvider";
 import { HomePage } from "./HomePage";
@@ -59,5 +59,21 @@ describe("HomePage", () => {
     expect(screen.getByText("送礼者制作链接")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /\/gift\/invite_/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /\/manage\/manage_/ })).toBeInTheDocument();
+  });
+
+  it("shows an error when room creation fails", async () => {
+    const user = userEvent.setup();
+    const repositories = createInMemoryRepositories();
+    repositories.rooms.createRoom = vi.fn(async () => {
+      throw new Error("创建房间失败，请检查本地启动模式");
+    });
+
+    renderHomePage(repositories);
+
+    await user.type(screen.getByLabelText("房间标题"), "小林生日气球场");
+    await user.type(screen.getByLabelText("收礼者称呼"), "小林");
+    await user.click(screen.getByRole("button", { name: "创建礼物房间" }));
+
+    expect(await screen.findByText("创建房间失败，请检查本地启动模式")).toBeInTheDocument();
   });
 });

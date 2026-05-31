@@ -3,7 +3,7 @@ import { createElement, createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { LaidOutBalloon } from "../../visual/balloonLayout";
 import { drawBalloon } from "../../visual/drawBalloon";
-import { hitTestBalloon, useCanvasBalloons } from "./useCanvasBalloons";
+import { createResponsiveStageSize, hitTestBalloon, useCanvasBalloons } from "./useCanvasBalloons";
 
 vi.mock("../../visual/drawBalloon", () => ({
   drawBalloon: vi.fn()
@@ -49,7 +49,14 @@ describe("hitTestBalloon", () => {
 });
 
 describe("useCanvasBalloons", () => {
-  it("draws in the 1200 by 720 virtual stage used by hit testing", () => {
+  it("creates a logical stage that matches a portrait mobile display ratio", () => {
+    expect(createResponsiveStageSize({ width: 390, height: 780 })).toEqual({
+      width: 1200,
+      height: 2400
+    });
+  });
+
+  it("draws into the provided logical stage so the canvas is not stretched by CSS", () => {
     const context = createFakeCanvasContext();
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(context);
     vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0);
@@ -97,7 +104,7 @@ describe("useCanvasBalloons", () => {
 
     function Harness() {
       const canvasRef = createRef<HTMLCanvasElement>();
-      useCanvasBalloons(canvasRef, layout, new Set());
+      useCanvasBalloons(canvasRef, layout, new Set(), { width: 1200, height: 2400 });
       return createElement("canvas", { ref: canvasRef });
     }
 
@@ -105,8 +112,8 @@ describe("useCanvasBalloons", () => {
     const canvas = container.querySelector("canvas")!;
 
     expect(canvas.width).toBe(1200);
-    expect(canvas.height).toBe(720);
-    expect(context.clearRect).toHaveBeenCalledWith(0, 0, 1200, 720);
+    expect(canvas.height).toBe(2400);
+    expect(context.clearRect).toHaveBeenCalledWith(0, 0, 1200, 2400);
     expect(drawBalloon).toHaveBeenCalledWith(context, layout[0].gift.balloonParams, 600, 360, 0);
   });
 });

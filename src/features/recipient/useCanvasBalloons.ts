@@ -2,8 +2,27 @@ import { RefObject, useEffect } from "react";
 import type { LaidOutBalloon } from "../../visual/balloonLayout";
 import { drawBalloon } from "../../visual/drawBalloon";
 
-const STAGE_WIDTH = 1200;
-const STAGE_HEIGHT = 720;
+const BASE_STAGE_WIDTH = 1200;
+const BASE_STAGE_HEIGHT = 720;
+
+export interface CanvasStageSize {
+  width: number;
+  height: number;
+}
+
+export const DEFAULT_CANVAS_STAGE_SIZE: CanvasStageSize = {
+  width: BASE_STAGE_WIDTH,
+  height: BASE_STAGE_HEIGHT
+};
+
+export function createResponsiveStageSize(visibleSize: { width: number; height: number }): CanvasStageSize {
+  if (visibleSize.width <= 0 || visibleSize.height <= 0) return DEFAULT_CANVAS_STAGE_SIZE;
+
+  return {
+    width: BASE_STAGE_WIDTH,
+    height: Math.round((BASE_STAGE_WIDTH * visibleSize.height) / visibleSize.width)
+  };
+}
 
 export interface HitTarget {
   id: string;
@@ -39,7 +58,8 @@ function getContext(canvas: HTMLCanvasElement) {
 export function useCanvasBalloons(
   canvasRef: RefObject<HTMLCanvasElement>,
   layout: LaidOutBalloon[],
-  burstIds: Set<string>
+  burstIds: Set<string>,
+  stageSize: CanvasStageSize = DEFAULT_CANVAS_STAGE_SIZE
 ) {
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,10 +73,10 @@ export function useCanvasBalloons(
 
     function render() {
       const ratio = window.devicePixelRatio || 1;
-      activeCanvas.width = STAGE_WIDTH * ratio;
-      activeCanvas.height = STAGE_HEIGHT * ratio;
+      activeCanvas.width = stageSize.width * ratio;
+      activeCanvas.height = stageSize.height * ratio;
       activeCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      activeCtx.clearRect(0, 0, STAGE_WIDTH, STAGE_HEIGHT);
+      activeCtx.clearRect(0, 0, stageSize.width, stageSize.height);
 
       for (const item of layout) {
         if (burstIds.has(item.gift.id)) continue;
@@ -70,5 +90,5 @@ export function useCanvasBalloons(
 
     render();
     return () => cancelAnimationFrame(animationId);
-  }, [burstIds, canvasRef, layout]);
+  }, [burstIds, canvasRef, layout, stageSize]);
 }

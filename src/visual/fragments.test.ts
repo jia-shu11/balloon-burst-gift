@@ -50,6 +50,23 @@ describe("createBurstFragments", () => {
     expect(updated).toHaveLength(fragments.length);
   });
 
+  it("keeps fragments drifting and rotating after the burst", () => {
+    const fragments = createBurstFragments(gift, { x: 400, y: 300 }, false);
+    const updated = updateFragments(fragments, 0.2, { width: 800, height: 600 });
+
+    expect(updated.some((fragment, index) => fragment.x !== fragments[index].x || fragment.y !== fragments[index].y)).toBe(
+      true
+    );
+    expect(updated.some((fragment, index) => fragment.rotation !== fragments[index].rotation)).toBe(true);
+  });
+
+  it("holds a dragged fragment in place while it is being grabbed", () => {
+    const [fragment] = createBurstFragments(gift, { x: 400, y: 300 }, false);
+    const updated = updateFragments([{ ...fragment, held: true, x: 420, y: 320 }], 0.2, { width: 800, height: 600 });
+
+    expect(updated[0]).toMatchObject({ x: 420, y: 320, held: true });
+  });
+
   it("omits playable waveform fragments during burst-all", () => {
     const fragments = createBurstFragments(gift, { x: 400, y: 300 }, true);
 

@@ -79,6 +79,7 @@ export function createInMemoryRepositories(
       const room = roomsById.get(input.roomId);
       if (!room) throw new Error("房间不存在");
       if (room.inviteToken !== input.inviteToken) throw new Error("邀请链接无效");
+      const seed = `${input.roomId}:${input.giverName}:${input.audioUrl}`;
       const gift: BalloonGift = {
         id: crypto.randomUUID(),
         roomId: input.roomId,
@@ -93,7 +94,8 @@ export function createInMemoryRepositories(
         imageUrls: input.imageUrls,
         imageBytes: input.imageBytes,
         balloonParams: generateBalloonParams({
-          seed: `${input.roomId}:${input.giverName}:${input.audioUrl}`,
+          seed: input.balloonMood ? `${seed}:${input.balloonMood}` : seed,
+          mood: input.balloonMood,
           audioDurationSec: input.audioDurationSec,
           averageVolume: input.averageVolume,
           peakVolume: input.peakVolume,

@@ -52,8 +52,10 @@ async function callGiftListRpc(client: SupabaseClient, name: string, args: Recor
 export function createSupabaseGiftRepository(client: SupabaseClient): GiftRepository {
   return {
     async createGift(input: CreateGiftInput): Promise<BalloonGift> {
+      const seed = `${input.roomId}:${input.giverName}:${input.audioUrl}`;
       const balloonParams = generateBalloonParams({
-        seed: `${input.roomId}:${input.giverName}:${input.audioUrl}`,
+        seed: input.balloonMood ? `${seed}:${input.balloonMood}` : seed,
+        mood: input.balloonMood,
         audioDurationSec: input.audioDurationSec,
         averageVolume: input.averageVolume,
         peakVolume: input.peakVolume,
