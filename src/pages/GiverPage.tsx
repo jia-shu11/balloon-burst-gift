@@ -29,7 +29,6 @@ export function GiverPage() {
   if (missing) {
     return (
       <main className="page">
-        <h1>制作气球礼物</h1>
         <p>邀请链接无效，或者这个礼物房间不存在。</p>
       </main>
     );
@@ -37,7 +36,6 @@ export function GiverPage() {
 
   return (
     <main className="page">
-      <h1>制作气球礼物</h1>
       {room ? <GiverComposer room={room} /> : <p>正在读取礼物房间...</p>}
     </main>
   );

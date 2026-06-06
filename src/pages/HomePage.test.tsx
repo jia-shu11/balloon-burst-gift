@@ -23,6 +23,13 @@ afterEach(() => {
 });
 
 describe("HomePage", () => {
+  it("shows only the product name in the opening hero", () => {
+    renderHomePage();
+
+    expect(screen.getByRole("heading", { name: "Balloon Burst Gift" })).toBeInTheDocument();
+    expect(screen.queryByText("创建一个由声音吹大的集体气球礼物。")).not.toBeInTheDocument();
+  });
+
   it("creates a room and shows the giver and management links", async () => {
     const user = userEvent.setup();
     const repositories = createInMemoryRepositories();

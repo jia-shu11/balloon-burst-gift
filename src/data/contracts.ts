@@ -1,4 +1,4 @@
-import type { BalloonGift, BalloonMood, GiftRoom } from "../domain/types";
+import type { AudioFeatureSummary, BalloonGift, GiftRoom } from "../domain/types";
 
 export interface CreateRoomInput {
   title: string;
@@ -19,7 +19,8 @@ export interface CreateGiftInput {
   extraText: string;
   imageUrls: string[];
   imageBytes: number;
-  balloonMood?: BalloonMood;
+  selectedHue?: number;
+  audioFeatures?: AudioFeatureSummary;
 }
 
 export interface RoomRepository {

@@ -1,20 +1,25 @@
 import { cleanup, render } from "@testing-library/react";
 import { createElement, createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createFakeCanvasContext } from "../../test/fakeCanvasContext";
 import type { LaidOutBalloon } from "../../visual/balloonLayout";
 import { drawBalloon } from "../../visual/drawBalloon";
 import { createResponsiveStageSize, hitTestBalloon, useCanvasBalloons } from "./useCanvasBalloons";
 
+const voiceSignature = {
+  durationSec: 2,
+  energyEnvelope: Array.from({ length: 32 }, () => 0.5),
+  waveformContour: Array.from({ length: 48 }, () => 0),
+  melTexture: [1, 1, 1, 1, 1, 1, 1, 1],
+  pausePattern: [],
+  rhythmDensity: 2,
+  pitchAccent: 1200,
+  dynamicRange: 0.2
+};
+
 vi.mock("../../visual/drawBalloon", () => ({
   drawBalloon: vi.fn()
 }));
-
-function createFakeCanvasContext() {
-  return {
-    setTransform: vi.fn(),
-    clearRect: vi.fn()
-  } as unknown as CanvasRenderingContext2D;
-}
 
 afterEach(() => {
   cleanup();
@@ -91,12 +96,25 @@ describe("useCanvasBalloons", () => {
             stretchY: 1.1,
             wobble: 0.4,
             glow: 0.7,
+            lightness: 64,
             surfaceWaveDensity: 8,
             floatSpeed: 0.3,
             stringLength: 70,
             fragmentCount: 14,
             burstRadius: 200,
-            hue: 330
+            hue: 330,
+            spikeCount: 0,
+            spikeLength: 0.14,
+            audioFeatures: {
+              durationSec: 2,
+              spectralCentroid: 1200,
+              rmsEnergy: 0.18,
+              peakEnergy: 0.6,
+              speechRate: 2,
+              melBands: [1, 1, 1, 1, 1, 1, 1, 1],
+              voiceSignature
+            },
+            voiceSignature
           }
         }
       }

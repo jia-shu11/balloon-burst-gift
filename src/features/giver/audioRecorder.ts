@@ -1,3 +1,6 @@
+import type { AudioFeatureSummary } from "../../domain/types";
+import { extractAudioFeaturesFromSamples } from "./audioFeatures";
+
 export interface RecordingSummary {
   durationSec: number;
   averageVolume: number;
@@ -10,10 +13,47 @@ export interface RecordingSummaryInput {
   samples: number[];
 }
 
+export interface LiveRecordingFrame {
+  level: number;
+  audioFeatures: AudioFeatureSummary;
+}
+
+export interface LiveRecordingFrameInput {
+  bytes: Uint8Array;
+  sampleRate: number;
+  elapsedSec: number;
+  historySamples?: number[];
+}
+
 export function calculateAudioLevel(bytes: Uint8Array) {
   if (bytes.length === 0) return 0;
   const total = bytes.reduce((sum, value) => sum + Math.abs(value - 128) / 128, 0);
   return Number(Math.min(1, total / bytes.length).toFixed(3));
+}
+
+function bytesToSamples(bytes: Uint8Array) {
+  return Float32Array.from(bytes, (value) => (value - 128) / 128);
+}
+
+export function appendLiveAudioSamples(historySamples: number[], bytes: Uint8Array, sampleRate: number) {
+  const nextSamples = Array.from(bytesToSamples(bytes));
+  const maxSamples = Math.max(bytes.length, Math.round(sampleRate * 1.6));
+  return [...historySamples, ...nextSamples].slice(-maxSamples);
+}
+
+export function createLiveRecordingFrame(input: LiveRecordingFrameInput): LiveRecordingFrame {
+  const sourceSamples = input.historySamples?.length ? input.historySamples : Array.from(bytesToSamples(input.bytes));
+  const audioFeatures = extractAudioFeaturesFromSamples(sourceSamples, input.sampleRate);
+  const latestFrameFeatures = extractAudioFeaturesFromSamples(bytesToSamples(input.bytes), input.sampleRate);
+
+  return {
+    level: calculateAudioLevel(input.bytes),
+    audioFeatures: {
+      ...audioFeatures,
+      spectralCentroid: latestFrameFeatures.spectralCentroid,
+      durationSec: Number(Math.max(0, input.elapsedSec).toFixed(2))
+    }
+  };
 }
 
 export function createRecordingSummary(input: RecordingSummaryInput): RecordingSummary {
@@ -33,21 +73,45 @@ export class BrowserAudioRecorder {
   private mediaRecorder: MediaRecorder | null = null;
   private chunks: BlobPart[] = [];
 
-  async start(onData: (level: number) => void) {
+  async start(onData: (frame: LiveRecordingFrame) => void) {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const context = new AudioContext();
     const source = context.createMediaStreamSource(stream);
     const analyser = context.createAnalyser();
-    analyser.fftSize = 256;
+    analyser.fftSize = 1024;
     source.connect(analyser);
 
-    const bytes = new Uint8Array(analyser.frequencyBinCount);
+    const bytes = new Uint8Array(analyser.fftSize);
     let active = true;
+    let latestFrame: LiveRecordingFrame | null = null;
+    let lastFeatureAtMs = 0;
+    let historySamples: number[] = [];
+    const startedAtMs = performance.now();
 
     const tick = () => {
       if (!active) return;
+      const nowMs = performance.now();
+      const elapsedSec = (nowMs - startedAtMs) / 1000;
       analyser.getByteTimeDomainData(bytes);
-      onData(calculateAudioLevel(bytes));
+      historySamples = appendLiveAudioSamples(historySamples, bytes, context.sampleRate);
+      if (!latestFrame || nowMs - lastFeatureAtMs >= 160) {
+        latestFrame = createLiveRecordingFrame({
+          bytes,
+          sampleRate: context.sampleRate,
+          elapsedSec,
+          historySamples
+        });
+        lastFeatureAtMs = nowMs;
+      } else {
+        latestFrame = {
+          level: calculateAudioLevel(bytes),
+          audioFeatures: {
+            ...latestFrame.audioFeatures,
+            durationSec: Number(Math.max(0, elapsedSec).toFixed(2))
+          }
+        };
+      }
+      onData(latestFrame);
       requestAnimationFrame(tick);
     };
 

@@ -2,22 +2,20 @@ import { type CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } f
 import { useRepositories } from "../../data/repositoryProvider";
 import { uploadGiftFile } from "../../data/storage";
 import { createSupabaseBrowserClient } from "../../data/supabaseClient";
-import { BALLOON_MOOD_OPTIONS } from "../../domain/balloonMood";
 import { generateBalloonParams } from "../../domain/balloonParams";
-import type { BalloonGift, BalloonMood, GiftRoom } from "../../domain/types";
-import { createBurstFragments } from "../../visual/fragments";
-import { BrowserAudioRecorder, createRecordingSummary } from "./audioRecorder";
+import type { AudioFeatureSummary, GiftRoom } from "../../domain/types";
+import { BrowserAudioRecorder, createRecordingSummary, type LiveRecordingFrame } from "./audioRecorder";
+import { analyzeAudioBlob, createFallbackAudioFeatures, resolveFinalAudioFeatures, type RecordingFeatureFallback } from "./audioFeatures";
 import { LiveBalloonPreview } from "./LiveBalloonPreview";
-import {
-  startSpeechTranscription as startBrowserSpeechTranscription,
-  type TranscriptResult
-} from "./transcription";
+
+const DEFAULT_HUE = 155;
 
 export interface RecordingDraft {
   blob: Blob;
   durationSec: number;
   averageVolume: number;
   peakVolume: number;
+  audioFeatures?: AudioFeatureSummary;
 }
 
 interface ImageUploadResult {
@@ -38,11 +36,9 @@ interface ImageDraft {
 }
 
 interface AudioRecorderController {
-  start(onData: (level: number) => void): Promise<() => void>;
+  start(onData: (frame: LiveRecordingFrame) => void): Promise<() => void>;
   stop(): Promise<Blob>;
 }
-
-type StartTranscription = (onTranscript: (result: TranscriptResult) => void) => (() => void) | null;
 
 function createMediaId() {
   return crypto.randomUUID();
@@ -97,13 +93,17 @@ async function defaultUploadImages(files: File[], context: UploadContext): Promi
   };
 }
 
+function getRecordingFeatures(recording: RecordingDraft | null, fallback: RecordingFeatureFallback) {
+  return recording?.audioFeatures ?? createFallbackAudioFeatures(fallback);
+}
+
 export function GiverComposer({
   room,
   initialRecording = null,
   uploadAudio = defaultUploadAudio,
   uploadImages = defaultUploadImages,
   recorder: providedRecorder,
-  startTranscription = startBrowserSpeechTranscription,
+  analyzeAudio = analyzeAudioBlob,
   nowMs = getPerformanceNowMs,
   onSubmitted
 }: {
@@ -112,7 +112,7 @@ export function GiverComposer({
   uploadAudio?: (blob: Blob, context: UploadContext) => Promise<string>;
   uploadImages?: (files: File[], context: UploadContext) => Promise<ImageUploadResult>;
   recorder?: AudioRecorderController;
-  startTranscription?: StartTranscription;
+  analyzeAudio?: (blob: Blob, fallback: RecordingFeatureFallback) => Promise<AudioFeatureSummary>;
   nowMs?: () => number;
   onSubmitted?: () => void;
 }) {
@@ -120,31 +120,42 @@ export function GiverComposer({
   const recorderRef = useRef<AudioRecorderController | null>(null);
   if (!recorderRef.current) recorderRef.current = providedRecorder ?? new BrowserAudioRecorder();
 
+  const [selectedHue, setSelectedHue] = useState(DEFAULT_HUE);
+  const [anonymous, setAnonymous] = useState(true);
   const [giverName, setGiverName] = useState("");
-  const [transcript, setTranscript] = useState("");
-  const [extraText, setExtraText] = useState("");
-  const [balloonMood, setBalloonMood] = useState<BalloonMood>("gentle");
   const [imageDrafts, setImageDrafts] = useState<ImageDraft[]>([]);
   const [selectedImageDraft, setSelectedImageDraft] = useState<ImageDraft | null>(null);
-  const [burstPreviewOpen, setBurstPreviewOpen] = useState(false);
   const [recording, setRecording] = useState<RecordingDraft | null>(initialRecording);
   const [recordingPreviewUrl, setRecordingPreviewUrl] = useState("");
   const [level, setLevel] = useState(initialRecording?.averageVolume ?? 0.2);
+  const [liveAudioFeatures, setLiveAudioFeatures] = useState<AudioFeatureSummary | null>(null);
   const [recordingActive, setRecordingActive] = useState(false);
   const [recordingElapsedSec, setRecordingElapsedSec] = useState(initialRecording?.durationSec ?? 0);
   const [stopMeter, setStopMeter] = useState<(() => void) | null>(null);
-  const [stopTranscription, setStopTranscription] = useState<(() => void) | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const samplesRef = useRef<number[]>([]);
+  const liveAudioFeaturesRef = useRef<AudioFeatureSummary | null>(null);
   const recordingStartedAtRef = useRef<number | null>(null);
 
   const imageBytes = imageDrafts.reduce((total, draft) => total + draft.file.size, 0);
   const previewAudioDurationSec = recording?.durationSec ?? (recordingActive ? recordingElapsedSec : 0);
-  const submitSummary = `${recording ? `${recording.durationSec} 秒语音` : "未录音"} · ${transcript.length} 字转写 · ${imageDrafts.length} 张图片`;
-  const hasPreviewContent =
-    Boolean(recording) || Boolean(transcript.trim()) || Boolean(extraText.trim()) || imageDrafts.length > 0 || Boolean(giverName.trim());
+  const fallbackFeatures = useMemo(
+    () =>
+      createFallbackAudioFeatures({
+        durationSec: previewAudioDurationSec,
+        averageVolume: recording?.averageVolume ?? level,
+        peakVolume: recording?.peakVolume ?? level
+      }),
+    [level, previewAudioDurationSec, recording]
+  );
+  const previewAudioFeatures = recording?.audioFeatures
+    ? { ...recording.audioFeatures, durationSec: previewAudioDurationSec }
+    : liveAudioFeatures
+      ? { ...liveAudioFeatures, durationSec: previewAudioDurationSec }
+      : fallbackFeatures;
+  const submitSummary = `${recording ? `${recording.durationSec} 秒语音` : "未录音"} · ${imageDrafts.length} 张图片`;
 
   useEffect(() => {
     if (!recordingActive) return undefined;
@@ -182,32 +193,22 @@ export function GiverComposer({
     };
   }, [recording]);
 
-  const previewParams = useMemo(
-    () =>
-      generateBalloonParams({
-        seed: `${room.id}:${giverName || "preview"}:${balloonMood}`,
-        mood: balloonMood,
+  const hasAudioInputForPreview = Boolean(recording || liveAudioFeatures);
+  const previewParams = useMemo(() => {
+    const params = generateBalloonParams({
+        seed: `${room.id}:preview`,
         audioDurationSec: previewAudioDurationSec,
-        averageVolume: recording?.averageVolume ?? level,
-        peakVolume: recording?.peakVolume ?? level,
-        transcriptChars: transcript.length,
-        extraTextChars: extraText.length,
+        averageVolume: previewAudioFeatures.rmsEnergy,
+        peakVolume: previewAudioFeatures.peakEnergy,
+        transcriptChars: 0,
+        extraTextChars: 0,
         imageCount: imageDrafts.length,
-        imageBytes
-      }),
-    [
-      extraText.length,
-      giverName,
-      balloonMood,
-      imageBytes,
-      imageDrafts.length,
-      level,
-      previewAudioDurationSec,
-      recording,
-      room.id,
-      transcript.length
-    ]
-  );
+        imageBytes,
+        selectedHue,
+        audioFeatures: previewAudioFeatures
+      });
+    return hasAudioInputForPreview ? params : { ...params, lightness: 0 };
+  }, [hasAudioInputForPreview, imageBytes, imageDrafts.length, previewAudioDurationSec, previewAudioFeatures, room.id, selectedHue]);
 
   async function startRecording() {
     if (recordingActive) return;
@@ -216,21 +217,23 @@ export function GiverComposer({
     setMessage("");
     setRecording(null);
     setRecordingPreviewUrl("");
+    setLiveAudioFeatures(null);
+    liveAudioFeaturesRef.current = null;
     setRecordingElapsedSec(0);
     samplesRef.current = [];
     recordingStartedAtRef.current = nowMs();
 
     try {
-      const stop = await recorderRef.current!.start((nextLevel) => {
-        const normalizedLevel = Number(Math.min(1, Math.max(0, nextLevel)).toFixed(3));
+      const stop = await recorderRef.current!.start((frame) => {
+        const normalizedLevel = Number(Math.min(1, Math.max(0, frame.level)).toFixed(3));
         setLevel(normalizedLevel);
+        if (frame.audioFeatures) {
+          liveAudioFeaturesRef.current = frame.audioFeatures;
+          setLiveAudioFeatures(frame.audioFeatures);
+        }
         samplesRef.current = [...samplesRef.current.slice(-400), normalizedLevel];
       });
-      const stopSpeech = startTranscription((result) => {
-        if (result.text) setTranscript(result.text);
-      });
       setStopMeter(() => stop);
-      setStopTranscription(() => stopSpeech);
       setRecordingActive(true);
     } catch (caught) {
       recordingStartedAtRef.current = null;
@@ -242,9 +245,7 @@ export function GiverComposer({
   async function stopRecording() {
     setError("");
     stopMeter?.();
-    stopTranscription?.();
     setStopMeter(null);
-    setStopTranscription(null);
     setRecordingActive(false);
 
     try {
@@ -255,16 +256,24 @@ export function GiverComposer({
         endedAtMs,
         samples: samplesRef.current
       });
+      const decodedFeatures = await analyzeAudio(blob, summary);
+      const audioFeatures = resolveFinalAudioFeatures(decodedFeatures, liveAudioFeaturesRef.current, summary);
+      const durationSec = audioFeatures.durationSec || summary.durationSec;
       setRecording({
         blob,
-        durationSec: summary.durationSec,
-        averageVolume: summary.averageVolume,
-        peakVolume: summary.peakVolume
+        durationSec,
+        averageVolume: audioFeatures.rmsEnergy,
+        peakVolume: audioFeatures.peakEnergy,
+        audioFeatures: { ...audioFeatures, durationSec }
       });
-      setRecordingElapsedSec(summary.durationSec);
-      setLevel(summary.averageVolume || level);
+      setRecordingElapsedSec(durationSec);
+      setLiveAudioFeatures(null);
+      liveAudioFeaturesRef.current = null;
+      setLevel(audioFeatures.rmsEnergy || summary.averageVolume || level);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "无法结束录音");
+    } finally {
+      recordingStartedAtRef.current = null;
     }
   }
 
@@ -272,6 +281,8 @@ export function GiverComposer({
     if (recordingActive) return;
     setRecording(null);
     setRecordingPreviewUrl("");
+    setLiveAudioFeatures(null);
+    liveAudioFeaturesRef.current = null;
     setRecordingElapsedSec(0);
     setLevel(0.2);
     samplesRef.current = [];
@@ -293,7 +304,6 @@ export function GiverComposer({
         }))
       );
       setImageDrafts((current) => [...current, ...drafts]);
-      setBurstPreviewOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "图片读取失败");
     }
@@ -302,27 +312,6 @@ export function GiverComposer({
   function removeImageDraft(id: string) {
     setImageDrafts((current) => current.filter((draft) => draft.id !== id));
     setSelectedImageDraft((current) => (current?.id === id ? null : current));
-    setBurstPreviewOpen(false);
-  }
-
-  function createPreviewGift(): BalloonGift {
-    return {
-      id: "preview-gift",
-      roomId: room.id,
-      giverName: giverName.trim() || "署名",
-      audioUrl: recordingPreviewUrl || "preview-audio",
-      audioDurationSec: previewAudioDurationSec,
-      averageVolume: recording?.averageVolume ?? level,
-      peakVolume: recording?.peakVolume ?? level,
-      transcript,
-      editedTranscript: transcript,
-      extraText,
-      imageUrls: imageDrafts.map((draft) => draft.previewUrl),
-      imageBytes,
-      balloonParams: previewParams,
-      deletedAt: null,
-      createdAt: new Date(0).toISOString()
-    };
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -330,12 +319,14 @@ export function GiverComposer({
     setError("");
     setMessage("");
 
-    if (!giverName.trim()) {
-      setError("请填写署名");
-      return;
-    }
     if (!recording) {
       setError("请先录制一段语音");
+      return;
+    }
+
+    const submittedGiverName = giverName.trim();
+    if (!anonymous && !submittedGiverName) {
+      setError("请填写你的名字");
       return;
     }
 
@@ -348,20 +339,27 @@ export function GiverComposer({
         imageDrafts.map((draft) => draft.file),
         uploadContext
       );
+      const audioFeatures = getRecordingFeatures(recording, {
+        durationSec: recording.durationSec,
+        averageVolume: recording.averageVolume,
+        peakVolume: recording.peakVolume
+      });
+
       await gifts.createGift({
         roomId: room.id,
         inviteToken: room.inviteToken,
-        giverName: giverName.trim(),
+        giverName: anonymous ? "匿名" : submittedGiverName,
         audioUrl,
-        audioDurationSec: recording.durationSec,
-        averageVolume: recording.averageVolume,
-        peakVolume: recording.peakVolume,
-        transcript,
-        editedTranscript: transcript,
-        extraText,
+        audioDurationSec: audioFeatures.durationSec,
+        averageVolume: audioFeatures.rmsEnergy,
+        peakVolume: audioFeatures.peakEnergy,
+        transcript: "",
+        editedTranscript: "",
+        extraText: "",
         imageUrls: imageUpload.urls,
         imageBytes: imageUpload.bytes,
-        balloonMood
+        selectedHue,
+        audioFeatures
       });
 
       setMessage("气球已送出");
@@ -375,91 +373,100 @@ export function GiverComposer({
 
   return (
     <section className="giver-composer">
-      <LiveBalloonPreview params={previewParams} level={level} />
+      <div className="composer-preview-scene">
+        <div className="composer-poster-art" aria-hidden="true">
+          <span className="poster-geometry poster-geometry-dot" />
+          <span className="poster-geometry poster-geometry-stripes" />
+          <span className="poster-star poster-star-rose" />
+          <span className="poster-star poster-star-blue" />
+          <span className="poster-gift" />
+          <span className="poster-hat" />
+          <span className="poster-cake" />
+        </div>
+        <LiveBalloonPreview params={previewParams} level={level} />
+      </div>
       <form className="panel form-grid" onSubmit={handleSubmit}>
         <div className="composer-heading">
-          <h2>{room.title}</h2>
+          <span className="composer-kicker">BALLOON GIFT STUDIO</span>
           <p>{room.promptText || `给 ${room.recipientName} 录一段祝福`}</p>
         </div>
 
-        <label>
-          署名
-          <input value={giverName} onChange={(event) => setGiverName(event.target.value)} />
-        </label>
-
-        <div className="recording-status">
-          <button type="button" onClick={startRecording} disabled={recordingActive}>
-            开始录音
-          </button>
-          <button type="button" onClick={stopRecording} disabled={!recordingActive}>
-            结束录音
-          </button>
-          {recording ? (
-            <button type="button" className="secondary-button" onClick={clearRecording}>
-              重新录音
+        <section className="composer-note composer-note-audio">
+          <div className="recording-status">
+            <button type="button" onClick={startRecording} disabled={recordingActive}>
+              开始录音
             </button>
+            <button type="button" onClick={stopRecording} disabled={!recordingActive}>
+              结束录音
+            </button>
+            {recording ? (
+              <button type="button" className="secondary-button" onClick={clearRecording}>
+                重新录音
+              </button>
+            ) : null}
+            <span>{recordingActive ? "录音中..." : recording ? `${recording.durationSec} 秒语音已就绪` : "还没有录音"}</span>
+          </div>
+
+          {recordingPreviewUrl ? (
+            <div className="recording-preview">
+              <audio aria-label="试听当前录音" controls src={recordingPreviewUrl} />
+            </div>
           ) : null}
-          <span>{recordingActive ? "录音中..." : recording ? `${recording.durationSec} 秒语音已就绪` : "还没有录音"}</span>
-        </div>
+        </section>
 
-        {recordingPreviewUrl ? (
-          <div className="recording-preview">
-            <audio aria-label="试听当前录音" controls src={recordingPreviewUrl} />
-          </div>
-        ) : null}
+        <section className="composer-note composer-note-signature">
+          <span className="note-label">name</span>
+          <label className="anonymous-toggle">
+            <input
+              type="checkbox"
+              checked={anonymous}
+              onChange={(event) => setAnonymous(event.target.checked)}
+            />
+            <span>匿名送出</span>
+          </label>
+          <label className="giver-name-control">
+            <span>你的名字</span>
+            <input
+              type="text"
+              value={giverName}
+              maxLength={20}
+              disabled={anonymous}
+              placeholder={anonymous ? "当前将显示为匿名" : "写下你的名字"}
+              onChange={(event) => setGiverName(event.target.value)}
+            />
+          </label>
+        </section>
 
-        <fieldset className="mood-selector">
-          <legend>气球气质</legend>
-          <div className="mood-options">
-            {BALLOON_MOOD_OPTIONS.map((option) => (
-              <label className={`mood-option${balloonMood === option.value ? " is-selected" : ""}`} key={option.value}>
-                <input
-                  type="radio"
-                  name="balloon-mood"
-                  value={option.value}
-                  aria-label={option.label}
-                  checked={balloonMood === option.value}
-                  onChange={() => {
-                    setBalloonMood(option.value);
-                    setBurstPreviewOpen(false);
-                  }}
-                />
-                <span
-                  className="mood-swatch"
-                  style={{ "--mood-hue": option.hue } as CSSProperties}
-                  aria-hidden="true"
-                />
-                <span>
-                  <strong>{option.label}</strong>
-                  <small>{option.description}</small>
-                </span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        <section className="composer-note composer-note-color">
+          <span className="note-label">color</span>
+          <label className="hue-control">
+            <span>气球颜色</span>
+            <input
+              type="range"
+              min="0"
+              max="359"
+              value={selectedHue}
+              onChange={(event) => setSelectedHue(Number(event.target.value))}
+              style={{ "--selected-hue": selectedHue } as CSSProperties}
+            />
+          </label>
+        </section>
 
-        <label>
-          转写文字
-          <textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} rows={4} />
-        </label>
-
-        <label>
-          附加文字
-          <textarea value={extraText} onChange={(event) => setExtraText(event.target.value)} rows={3} />
-        </label>
-
-        <label>
-          图片
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(event) => {
-              void handleImageFiles(event.target.files);
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
+        <section className="composer-note composer-note-image">
+          <span className="note-label">photo</span>
+          <label>
+            图片
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={(event) => {
+                void handleImageFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+        </section>
 
         {imageDrafts.length > 0 ? (
           <div className="image-draft-grid" aria-label="图片预览">
@@ -484,82 +491,15 @@ export function GiverComposer({
           </div>
         ) : null}
 
-        <section className="gift-fragment-preview" aria-label="礼物碎片预览">
-          <div className="fragment-preview-heading">
-            <h3>礼物碎片</h3>
-            <span>实时预览</span>
-          </div>
-          <div className="fragment-preview-list">
-            {recording ? <span>语音碎片</span> : null}
-            {transcript.trim() ? <span>转写文字碎片</span> : null}
-            {extraText.trim() ? <span>附加文字碎片</span> : null}
-            {imageDrafts.map((draft, index) => (
-              <span key={draft.id}>图片碎片 {index + 1}</span>
-            ))}
-            {giverName.trim() ? <span>署名碎片</span> : null}
-            {!recording && !transcript.trim() && !extraText.trim() && imageDrafts.length === 0 && !giverName.trim() ? (
-              <span>还没有碎片</span>
-            ) : null}
-          </div>
-        </section>
-
         {error ? <p className="error-text">{error}</p> : null}
         {message ? <p className="success-text">{message}</p> : null}
         <p className="submit-summary">{submitSummary}</p>
         <div className="composer-actions">
-          <button type="button" className="secondary-button" disabled={!hasPreviewContent} onClick={() => setBurstPreviewOpen(true)}>
-            试爆预览
-          </button>
           <button type="submit" disabled={submitting}>
             {submitting ? "正在送出" : "提交气球"}
           </button>
         </div>
       </form>
-      {burstPreviewOpen ? (
-        <div
-          className="composer-burst-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="制作端试爆预览"
-          onClick={() => setBurstPreviewOpen(false)}
-        >
-          <div className="composer-burst-dialog" onClick={(event) => event.stopPropagation()}>
-            <div className="composer-burst-heading">
-              <h3>试爆预览</h3>
-              <button type="button" className="small-quiet-button" onClick={() => setBurstPreviewOpen(false)}>
-                关闭
-              </button>
-            </div>
-            <div className="composer-burst-stage">
-              {createBurstFragments(createPreviewGift(), { x: 0, y: 0 }, false)
-                .slice(0, 18)
-                .map((fragment, index) => (
-                  <span
-                    key={fragment.id}
-                    className={`composer-preview-fragment composer-preview-fragment-${fragment.kind}`}
-                    style={
-                      {
-                        "--preview-x": `${Math.round(fragment.vx * 0.38)}px`,
-                        "--preview-y": `${Math.round(fragment.vy * 0.38)}px`,
-                        "--preview-r": `${fragment.rotation}deg`,
-                        "--preview-delay": `${index * 18}ms`
-                      } as CSSProperties
-                    }
-                    aria-hidden={fragment.kind === "particle"}
-                  >
-                    {fragment.kind === "particle" ? null : fragment.kind === "waveform" ? (
-                      "语音"
-                    ) : fragment.kind === "image" ? (
-                      <img src={fragment.content} alt="试爆图片碎片" />
-                    ) : (
-                      fragment.content
-                    )}
-                  </span>
-                ))}
-            </div>
-          </div>
-        </div>
-      ) : null}
       {selectedImageDraft ? (
         <div
           className="image-preview-overlay"

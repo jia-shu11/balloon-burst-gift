@@ -1,5 +1,4 @@
 export type RoomStatus = "draft" | "published";
-export type BalloonMood = "gentle" | "bright" | "playful" | "secret" | "celebrate";
 
 export interface GiftRoom {
   id: string;
@@ -32,23 +31,53 @@ export interface BalloonGift {
   createdAt: string;
 }
 
+export interface AudioFeatureSummary {
+  durationSec: number;
+  spectralCentroid: number;
+  rmsEnergy: number;
+  peakEnergy: number;
+  speechRate: number;
+  melBands: number[];
+  voiceSignature?: VoiceGiftSignature;
+}
+
+export interface VoicePause {
+  position: number;
+  strength: number;
+}
+
+export interface VoiceGiftSignature {
+  durationSec: number;
+  energyEnvelope: number[];
+  waveformContour: number[];
+  melTexture: number[];
+  pausePattern: VoicePause[];
+  rhythmDensity: number;
+  pitchAccent: number;
+  dynamicRange: number;
+}
+
 export interface BalloonParams {
   radius: number;
   stretchX: number;
   stretchY: number;
   wobble: number;
   glow: number;
+  lightness: number;
   surfaceWaveDensity: number;
   floatSpeed: number;
   stringLength: number;
   fragmentCount: number;
   burstRadius: number;
   hue: number;
+  spikeCount: number;
+  spikeLength: number;
+  audioFeatures: AudioFeatureSummary;
+  voiceSignature: VoiceGiftSignature;
 }
 
 export interface GiftInputMetrics {
   seed: string;
-  mood?: BalloonMood;
   audioDurationSec: number;
   averageVolume: number;
   peakVolume: number;
@@ -56,4 +85,7 @@ export interface GiftInputMetrics {
   extraTextChars: number;
   imageCount: number;
   imageBytes: number;
+  selectedHue?: number;
+  audioFeatures?: AudioFeatureSummary;
+  voiceSignature?: VoiceGiftSignature;
 }

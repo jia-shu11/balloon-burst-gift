@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { App } from "../App";
 import { createInMemoryRepositories } from "../data/inMemoryRepositories";
 import { RepositoryProvider } from "../data/repositoryProvider";
+import { createFakeCanvasContext } from "../test/fakeCanvasContext";
 
 function renderAppAt(path: string, repositories = createInMemoryRepositories()) {
   render(
@@ -16,24 +17,6 @@ function renderAppAt(path: string, repositories = createInMemoryRepositories()) 
       </MemoryRouter>
     </RepositoryProvider>
   );
-}
-
-function createFakeCanvasContext() {
-  return {
-    save: vi.fn(),
-    restore: vi.fn(),
-    beginPath: vi.fn(),
-    moveTo: vi.fn(),
-    bezierCurveTo: vi.fn(),
-    closePath: vi.fn(),
-    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-    fill: vi.fn(),
-    stroke: vi.fn(),
-    ellipse: vi.fn(),
-    quadraticCurveTo: vi.fn(),
-    setTransform: vi.fn(),
-    clearRect: vi.fn()
-  } as unknown as CanvasRenderingContext2D;
 }
 
 beforeEach(() => {
@@ -51,7 +34,8 @@ describe("page navigation", () => {
     const room = await repositories.rooms.createRoom({ title: "生日气球", recipientName: "小林", promptText: "" });
 
     renderAppAt(`/gift/${room.inviteToken}`, repositories);
-    expect(await screen.findByRole("heading", { name: "制作气球礼物" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "开始录音" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "制作气球礼物" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "返回首页" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /管理/ })).not.toBeInTheDocument();
 

@@ -26,9 +26,10 @@ describe("App routes", () => {
     expect(screen.getByRole("heading", { name: "Balloon Burst Gift" })).toBeInTheDocument();
   });
 
-  it("renders giver, management, and recipient routes", () => {
+  it("renders giver, management, and recipient routes", async () => {
     renderAt("/gift/invite_abc");
-    expect(screen.getByRole("heading", { name: "制作气球礼物" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "制作气球礼物" })).not.toBeInTheDocument();
+    expect(await screen.findByText("邀请链接无效，或者这个礼物房间不存在。")).toBeInTheDocument();
 
     renderAt("/manage/manage_abc");
     expect(screen.getByRole("heading", { name: "管理礼物房间" })).toBeInTheDocument();

@@ -94,15 +94,16 @@ export function createInMemoryRepositories(
         imageUrls: input.imageUrls,
         imageBytes: input.imageBytes,
         balloonParams: generateBalloonParams({
-          seed: input.balloonMood ? `${seed}:${input.balloonMood}` : seed,
-          mood: input.balloonMood,
+          seed,
           audioDurationSec: input.audioDurationSec,
           averageVolume: input.averageVolume,
           peakVolume: input.peakVolume,
           transcriptChars: input.editedTranscript.length || input.transcript.length,
           extraTextChars: input.extraText.length,
           imageCount: input.imageUrls.length,
-          imageBytes: input.imageBytes
+          imageBytes: input.imageBytes,
+          selectedHue: input.selectedHue,
+          audioFeatures: input.audioFeatures
         }),
         deletedAt: null,
         createdAt: nowIso()

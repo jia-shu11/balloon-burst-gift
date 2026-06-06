@@ -457,9 +457,21 @@ export function RecipientStage({
 
   return (
     <section className="recipient-stage" aria-label={`${room.title} 收礼现场`}>
+      <div className="stage-poster-art" aria-hidden="true">
+        <span className="stage-title-letters">{room.title}</span>
+        <span className="stage-shape stage-shape-star-blue" />
+        <span className="stage-shape stage-shape-star-rose" />
+        <span className="stage-shape stage-shape-gift" />
+        <span className="stage-shape stage-shape-hat" />
+        <span className="stage-shape stage-shape-confetti" />
+        <span className="stage-number stage-number-one">3</span>
+        <span className="stage-number stage-number-two">9</span>
+        <span className="stage-number stage-number-three">10</span>
+      </div>
       <div className="stage-topbar">
-        <strong>{room.recipientName} 的 Balloon Burst Gift</strong>
-        <span>{gifts.length} 个匿名气球</span>
+        <strong>
+          <span>to {room.recipientName}</span>
+        </strong>
       </div>
       <div className="stage-field" ref={stageFieldRef}>
         <canvas ref={canvasRef} className="balloon-canvas" onClick={handleCanvasClick} />

@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import type { BalloonGift } from "../domain/types";
 import { createBalloonLayout } from "./balloonLayout";
 
+const voiceSignature = {
+  durationSec: 2,
+  energyEnvelope: Array.from({ length: 32 }, () => 0.5),
+  waveformContour: Array.from({ length: 48 }, () => 0),
+  melTexture: [1, 1, 1, 1, 1, 1, 1, 1],
+  pausePattern: [],
+  rhythmDensity: 2,
+  pitchAccent: 1200,
+  dynamicRange: 0.2
+};
+
 function gift(id: string, radius: number): BalloonGift {
   return {
     id,
@@ -24,12 +35,25 @@ function gift(id: string, radius: number): BalloonGift {
       stretchY: 1.15,
       wobble: 0.4,
       glow: 0.7,
+      lightness: 64,
       surfaceWaveDensity: 8,
       floatSpeed: 0.3,
       stringLength: 70,
       fragmentCount: 16,
       burstRadius: 200,
-      hue: 330
+      hue: 330,
+      spikeCount: 0,
+      spikeLength: 0.14,
+      audioFeatures: {
+        durationSec: 2,
+        spectralCentroid: 1200,
+        rmsEnergy: 0.18,
+        peakEnergy: 0.6,
+        speechRate: 2,
+        melBands: [1, 1, 1, 1, 1, 1, 1, 1],
+        voiceSignature
+      },
+      voiceSignature
     }
   };
 }

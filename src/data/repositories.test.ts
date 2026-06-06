@@ -5,18 +5,42 @@ import { createSupabaseGiftRepository } from "./giftRepository";
 import { createSupabaseRoomRepository } from "./roomRepository";
 import { mapGiftRow, mapRoomRow } from "./supabaseMapping";
 
+const voiceSignature = {
+  durationSec: 2,
+  energyEnvelope: Array.from({ length: 32 }, () => 0.5),
+  waveformContour: Array.from({ length: 48 }, () => 0),
+  melTexture: [1, 1, 1, 1, 1, 1, 1, 1],
+  pausePattern: [],
+  rhythmDensity: 2,
+  pitchAccent: 1200,
+  dynamicRange: 0.2
+};
+
 const balloonParams: BalloonParams = {
   radius: 88,
   stretchX: 1,
   stretchY: 1.1,
   wobble: 0.5,
   glow: 0.7,
+  lightness: 64,
   surfaceWaveDensity: 9,
   floatSpeed: 0.3,
   stringLength: 72,
   fragmentCount: 18,
   burstRadius: 220,
-  hue: 330
+  hue: 330,
+  spikeCount: 0,
+  spikeLength: 0.14,
+  audioFeatures: {
+    durationSec: 2,
+    spectralCentroid: 1200,
+    rmsEnergy: 0.18,
+    peakEnergy: 0.6,
+    speechRate: 2,
+    melBands: [1, 1, 1, 1, 1, 1, 1, 1],
+    voiceSignature
+  },
+  voiceSignature
 };
 
 const roomRow = {

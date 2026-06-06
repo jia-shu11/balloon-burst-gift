@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { BalloonGift, GiftRoom } from "../../domain/types";
+import { createFakeCanvasContext } from "../../test/fakeCanvasContext";
 import { createBalloonRenderExclusionIds, RecipientStage } from "./RecipientStage";
 
 const room: GiftRoom = {
@@ -15,6 +16,17 @@ const room: GiftRoom = {
   status: "published",
   createdAt: "2026-05-27T00:00:00.000Z",
   publishedAt: "2026-05-27T00:00:00.000Z"
+};
+
+const voiceSignature = {
+  durationSec: 2,
+  energyEnvelope: Array.from({ length: 32 }, () => 0.5),
+  waveformContour: Array.from({ length: 48 }, () => 0),
+  melTexture: [1, 1, 1, 1, 1, 1, 1, 1],
+  pausePattern: [],
+  rhythmDensity: 2,
+  pitchAccent: 1200,
+  dynamicRange: 0.2
 };
 
 const gift: BalloonGift = {
@@ -38,12 +50,25 @@ const gift: BalloonGift = {
     stretchY: 1.1,
     wobble: 0.4,
     glow: 0.7,
+    lightness: 64,
     surfaceWaveDensity: 8,
     floatSpeed: 0.3,
     stringLength: 70,
     fragmentCount: 14,
     burstRadius: 200,
-    hue: 330
+    hue: 330,
+    spikeCount: 0,
+    spikeLength: 0.14,
+    audioFeatures: {
+      durationSec: 2,
+      spectralCentroid: 1200,
+      rmsEnergy: 0.18,
+      peakEnergy: 0.6,
+      speechRate: 2,
+      melBands: [1, 1, 1, 1, 1, 1, 1, 1],
+      voiceSignature
+    },
+    voiceSignature
   }
 };
 
@@ -77,24 +102,6 @@ const stretchedGift: BalloonGift = {
     stretchY: 1.32
   }
 };
-
-function createFakeCanvasContext() {
-  return {
-    save: vi.fn(),
-    restore: vi.fn(),
-    beginPath: vi.fn(),
-    moveTo: vi.fn(),
-    bezierCurveTo: vi.fn(),
-    closePath: vi.fn(),
-    createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
-    fill: vi.fn(),
-    stroke: vi.fn(),
-    ellipse: vi.fn(),
-    quadraticCurveTo: vi.fn(),
-    setTransform: vi.fn(),
-    clearRect: vi.fn()
-  } as unknown as CanvasRenderingContext2D;
-}
 
 beforeEach(() => {
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(createFakeCanvasContext());
@@ -174,10 +181,11 @@ describe("RecipientStage", () => {
     expect(canvas!.height).toBe(2400);
   });
 
-  it("renders anonymous balloon count and exposes burst all control", () => {
+  it("hides the anonymous balloon count while exposing burst all control", () => {
     renderStage([gift]);
 
-    expect(screen.getByText("1 个匿名气球")).toBeInTheDocument();
+    expect(screen.queryByText(/happy birthday/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("1 个匿名气球")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "长按蓄能，全场爆炸" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "退出现场" })).not.toBeInTheDocument();
   });
@@ -312,7 +320,7 @@ describe("RecipientStage", () => {
     renderStage([]);
 
     expect(screen.getByText("礼物还在准备中")).toBeInTheDocument();
-    expect(screen.getByText("0 个匿名气球")).toBeInTheDocument();
+    expect(screen.queryByText("0 个匿名气球")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "长按蓄能，全场爆炸" })).not.toBeInTheDocument();
   });
 

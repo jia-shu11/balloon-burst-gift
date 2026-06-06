@@ -77,7 +77,6 @@ export function HomePage() {
     <main className="page home-page">
       <section className="hero-copy">
         <h1>Balloon Burst Gift</h1>
-        <p>创建一个由声音吹大的集体气球礼物。</p>
       </section>
 
       <form className="panel form-grid" onSubmit={handleSubmit}>

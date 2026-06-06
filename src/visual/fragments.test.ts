@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import type { BalloonGift } from "../domain/types";
 import { createBurstFragments, updateFragments } from "./fragments";
 
+const voiceSignature = {
+  durationSec: 2,
+  energyEnvelope: Array.from({ length: 32 }, () => 0.5),
+  waveformContour: Array.from({ length: 48 }, () => 0),
+  melTexture: [1, 1, 1, 1, 1, 1, 1, 1],
+  pausePattern: [],
+  rhythmDensity: 2,
+  pitchAccent: 1200,
+  dynamicRange: 0.2
+};
+
 const gift: BalloonGift = {
   id: "gift-1",
   roomId: "room",
@@ -23,12 +34,25 @@ const gift: BalloonGift = {
     stretchY: 1.15,
     wobble: 0.5,
     glow: 0.8,
+    lightness: 64,
     surfaceWaveDensity: 10,
     floatSpeed: 0.4,
     stringLength: 80,
     fragmentCount: 16,
     burstRadius: 220,
-    hue: 332
+    hue: 332,
+    spikeCount: 0,
+    spikeLength: 0.14,
+    audioFeatures: {
+      durationSec: 2,
+      spectralCentroid: 1200,
+      rmsEnergy: 0.18,
+      peakEnergy: 0.6,
+      speechRate: 2,
+      melBands: [1, 1, 1, 1, 1, 1, 1, 1],
+      voiceSignature
+    },
+    voiceSignature
   }
 };
 

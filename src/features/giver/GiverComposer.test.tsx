@@ -4,8 +4,9 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryRepositories } from "../../data/inMemoryRepositories";
 import { RepositoryProvider } from "../../data/repositoryProvider";
-import type { GiftRoom } from "../../domain/types";
-import { GiverComposer } from "./GiverComposer";
+import type { AudioFeatureSummary, GiftRoom, VoiceGiftSignature } from "../../domain/types";
+import { createFallbackAudioFeatures } from "./audioFeatures";
+import { GiverComposer, type RecordingDraft } from "./GiverComposer";
 
 const room: GiftRoom = {
   id: "room-1",
@@ -18,6 +19,34 @@ const room: GiftRoom = {
   status: "draft",
   createdAt: "2026-05-27T00:00:00.000Z",
   publishedAt: null
+};
+
+const audioFeatures: AudioFeatureSummary = {
+  durationSec: 12,
+  spectralCentroid: 1800,
+  rmsEnergy: 0.32,
+  peakEnergy: 0.8,
+  speechRate: 2.4,
+  melBands: [0.1, 0.14, 0.18, 0.22, 0.3, 0.38, 0.42, 0.5]
+};
+
+const voiceSignature: VoiceGiftSignature = {
+  durationSec: 12,
+  energyEnvelope: Array.from({ length: 32 }, (_, index) => Number((index / 31).toFixed(3))),
+  waveformContour: Array.from({ length: 48 }, (_, index) => Number(Math.sin(index / 3).toFixed(3))),
+  melTexture: [0.1, 0.14, 0.18, 0.22, 0.3, 0.38, 0.42, 0.5],
+  pausePattern: [{ position: 0.5, strength: 0.6 }],
+  rhythmDensity: 3.2,
+  pitchAccent: 1800,
+  dynamicRange: 0.52
+};
+
+const initialRecording: RecordingDraft = {
+  blob: new Blob(["audio"], { type: "audio/webm" }),
+  durationSec: audioFeatures.durationSec,
+  averageVolume: audioFeatures.rmsEnergy,
+  peakVolume: audioFeatures.peakEnergy,
+  audioFeatures: { ...audioFeatures, voiceSignature }
 };
 
 afterEach(() => {
@@ -33,6 +62,49 @@ describe("GiverComposer", () => {
     return balloon;
   }
 
+  it("starts with zero lightness before any audio frame is available", () => {
+    const repositories = createInMemoryRepositories();
+
+    const { container } = render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer room={room} />
+      </RepositoryProvider>
+    );
+
+    expect(getPreviewBalloon(container)).toHaveStyle({ "--balloon-lightness": "0%" });
+  });
+
+  it("keeps the composer focused on recording, hue, and image upload", () => {
+    const repositories = createInMemoryRepositories();
+
+    const { container } = render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer room={room} />
+      </RepositoryProvider>
+    );
+
+    expect(screen.queryByText(room.title)).not.toBeInTheDocument();
+    expect(screen.queryByText(/voice/i)).not.toBeInTheDocument();
+    expect(container.querySelector(".poster-word")).toBeNull();
+    expect(container.querySelector(".poster-year")).toBeNull();
+    expect(container.querySelector(".poster-number")).toBeNull();
+    expect(container.querySelector(".poster-geometry-dot")).toBeTruthy();
+    expect(container.querySelector(".poster-geometry-stripes")).toBeTruthy();
+    expect(container.querySelector(".composer-preview-scene")).toBeTruthy();
+    expect(container.querySelector(".composer-page-art")).toBeNull();
+    expect(container.querySelector(".live-balloon-wrap")?.closest(".composer-preview-scene")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "开始录音" })).toBeInTheDocument();
+    expect(screen.getByLabelText("气球颜色")).toBeInTheDocument();
+    expect(screen.getByLabelText("图片")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "匿名送出" })).toBeChecked();
+    expect(screen.getByLabelText("你的名字")).toBeDisabled();
+    expect(screen.queryByText("气球气质")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("转写文字")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("附加文字")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("礼物碎片预览")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "试爆预览" })).not.toBeInTheDocument();
+  });
+
   it("requires audio before submission", async () => {
     const user = userEvent.setup();
     const repositories = createInMemoryRepositories();
@@ -43,13 +115,59 @@ describe("GiverComposer", () => {
       </RepositoryProvider>
     );
 
-    await user.type(screen.getByLabelText("署名"), "Alice");
     await user.click(screen.getByRole("button", { name: "提交气球" }));
 
     expect(screen.getByText("请先录制一段语音")).toBeInTheDocument();
   });
 
-  it("submits a gift after an audio blob is provided", async () => {
+  it("requires a name when anonymous delivery is turned off", async () => {
+    const user = userEvent.setup();
+    const repositories = createInMemoryRepositories();
+
+    render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer room={room} initialRecording={initialRecording} />
+      </RepositoryProvider>
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "匿名送出" }));
+    await user.click(screen.getByRole("button", { name: "提交气球" }));
+
+    expect(screen.getByText("请填写你的名字")).toBeInTheDocument();
+  });
+
+  it("submits the entered giver name when anonymous delivery is turned off", async () => {
+    const user = userEvent.setup();
+    const repositories = createInMemoryRepositories();
+    const realRoom = await repositories.rooms.createRoom({
+      title: room.title,
+      recipientName: room.recipientName,
+      promptText: room.promptText
+    });
+
+    render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer
+          room={realRoom}
+          initialRecording={initialRecording}
+          uploadAudio={async () => "https://cdn.example/audio.webm"}
+          uploadImages={async () => ({ urls: [], bytes: 0 })}
+        />
+      </RepositoryProvider>
+    );
+
+    await user.click(screen.getByRole("checkbox", { name: "匿名送出" }));
+    await user.type(screen.getByLabelText("你的名字"), "小周");
+    await user.click(screen.getByRole("button", { name: "提交气球" }));
+
+    const storedGifts = await repositories.gifts.listActiveGifts({
+      roomId: realRoom.id,
+      manageToken: realRoom.manageToken
+    });
+    expect(storedGifts[0].giverName).toBe("小周");
+  });
+
+  it("submits an anonymous audio gift with the selected hue and extracted audio features", async () => {
     const user = userEvent.setup();
     const repositories = createInMemoryRepositories();
     const realRoom = await repositories.rooms.createRoom({
@@ -63,12 +181,7 @@ describe("GiverComposer", () => {
       <RepositoryProvider repositories={repositories}>
         <GiverComposer
           room={realRoom}
-          initialRecording={{
-            blob: new Blob(["audio"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
+          initialRecording={initialRecording}
           uploadAudio={async () => "https://cdn.example/audio.webm"}
           uploadImages={async () => ({ urls: [], bytes: 0 })}
           onSubmitted={onSubmitted}
@@ -76,8 +189,7 @@ describe("GiverComposer", () => {
       </RepositoryProvider>
     );
 
-    await user.type(screen.getByLabelText("署名"), "Alice");
-    await user.type(screen.getByLabelText("转写文字"), "生日快乐");
+    fireEvent.change(screen.getByLabelText("气球颜色"), { target: { value: "210" } });
     await user.click(screen.getByRole("button", { name: "提交气球" }));
 
     expect(await screen.findByText("气球已送出")).toBeInTheDocument();
@@ -85,9 +197,35 @@ describe("GiverComposer", () => {
       roomId: realRoom.id,
       manageToken: realRoom.manageToken
     });
-    expect(storedGifts[0].giverName).toBe("Alice");
-    expect(storedGifts[0].editedTranscript).toBe("生日快乐");
+    expect(storedGifts[0].giverName).toBe("匿名");
+    expect(storedGifts[0].editedTranscript).toBe("");
+    expect(storedGifts[0].extraText).toBe("");
+    expect(storedGifts[0].balloonParams.hue).toBe(210);
+    expect(storedGifts[0].balloonParams.audioFeatures.spectralCentroid).toBe(1800);
+    expect(storedGifts[0].balloonParams.voiceSignature.waveformContour).toEqual(voiceSignature.waveformContour);
     expect(onSubmitted).toHaveBeenCalledTimes(1);
+  });
+
+  it("changes hue without regenerating the preview balloon geometry", () => {
+    const repositories = createInMemoryRepositories();
+
+    const { container } = render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer room={room} initialRecording={initialRecording} />
+      </RepositoryProvider>
+    );
+
+    const balloon = getPreviewBalloon(container);
+    const initialWidth = balloon.style.width;
+    const initialHeight = balloon.style.height;
+    const initialStringHeight = container.querySelector<HTMLElement>(".live-balloon-string")?.style.height;
+
+    fireEvent.change(screen.getByLabelText("气球颜色"), { target: { value: "280" } });
+
+    expect(balloon.style.width).toBe(initialWidth);
+    expect(balloon.style.height).toBe(initialHeight);
+    expect(container.querySelector<HTMLElement>(".live-balloon-string")?.style.height).toBe(initialStringHeight);
+    expect(balloon.style.filter).toContain("hsl(280");
   });
 
   it("stores local uploaded images as persistent data urls", async () => {
@@ -101,20 +239,10 @@ describe("GiverComposer", () => {
 
     render(
       <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={realRoom}
-          initialRecording={{
-            blob: new Blob(["audio"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-          uploadAudio={async () => "https://cdn.example/audio.webm"}
-        />
+        <GiverComposer room={realRoom} initialRecording={initialRecording} uploadAudio={async () => "https://cdn.example/audio.webm"} />
       </RepositoryProvider>
     );
 
-    await user.type(screen.getByLabelText("署名"), "Alice");
     await user.upload(screen.getByLabelText("图片"), new File(["image-bytes"], "photo.png", { type: "image/png" }));
     await user.click(screen.getByRole("button", { name: "提交气球" }));
 
@@ -137,20 +265,10 @@ describe("GiverComposer", () => {
 
     render(
       <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={realRoom}
-          initialRecording={{
-            blob: new Blob(["audio-bytes"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-          uploadImages={async () => ({ urls: [], bytes: 0 })}
-        />
+        <GiverComposer room={realRoom} initialRecording={initialRecording} uploadImages={async () => ({ urls: [], bytes: 0 })} />
       </RepositoryProvider>
     );
 
-    await user.type(screen.getByLabelText("署名"), "Alice");
     await user.click(screen.getByRole("button", { name: "提交气球" }));
 
     expect(await screen.findByText("气球已送出")).toBeInTheDocument();
@@ -172,20 +290,10 @@ describe("GiverComposer", () => {
 
     render(
       <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={realRoom}
-          initialRecording={{
-            blob: new Blob(["audio"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-          uploadAudio={async () => "https://cdn.example/audio.webm"}
-        />
+        <GiverComposer room={realRoom} initialRecording={initialRecording} uploadAudio={async () => "https://cdn.example/audio.webm"} />
       </RepositoryProvider>
     );
 
-    await user.type(screen.getByLabelText("署名"), "Alice");
     await user.upload(screen.getByLabelText("图片"), new File(["image-bytes"], "photo.png", { type: "image/png" }));
 
     const thumbnail = await screen.findByRole("img", { name: "预览图片 photo.png" });
@@ -213,15 +321,7 @@ describe("GiverComposer", () => {
 
     render(
       <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={room}
-          initialRecording={{
-            blob: new Blob(["audio-bytes"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-        />
+        <GiverComposer room={room} initialRecording={initialRecording} />
       </RepositoryProvider>
     );
 
@@ -233,157 +333,132 @@ describe("GiverComposer", () => {
     expect(screen.queryByLabelText("试听当前录音")).not.toBeInTheDocument();
   });
 
-  it("summarizes the gift as fragments before submission", async () => {
-    const user = userEvent.setup();
-    const repositories = createInMemoryRepositories();
-
-    render(
-      <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={room}
-          initialRecording={{
-            blob: new Blob(["audio"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-        />
-      </RepositoryProvider>
-    );
-
-    await user.type(screen.getByLabelText("署名"), "Alice");
-    await user.type(screen.getByLabelText("转写文字"), "生日快乐");
-    await user.type(screen.getByLabelText("附加文字"), "今晚见");
-    await user.upload(screen.getByLabelText("图片"), new File(["image-bytes"], "cake.png", { type: "image/png" }));
-
-    const fragments = screen.getByLabelText("礼物碎片预览");
-    expect(fragments).toHaveTextContent("语音碎片");
-    expect(fragments).toHaveTextContent("转写文字碎片");
-    expect(fragments).toHaveTextContent("附加文字碎片");
-    expect(fragments).toHaveTextContent("图片碎片 1");
-    expect(fragments).toHaveTextContent("署名碎片");
-    expect(screen.getByText("12 秒语音 · 4 字转写 · 1 张图片")).toBeInTheDocument();
-  });
-
-  it("stores the selected balloon mood in generated recipient-stage parameters", async () => {
-    const user = userEvent.setup();
-    const repositories = createInMemoryRepositories();
-    const realRoom = await repositories.rooms.createRoom({
-      title: room.title,
-      recipientName: room.recipientName,
-      promptText: room.promptText
-    });
-
-    render(
-      <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={realRoom}
-          initialRecording={{
-            blob: new Blob(["audio"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-          uploadAudio={async () => "https://cdn.example/audio.webm"}
-          uploadImages={async () => ({ urls: [], bytes: 0 })}
-        />
-      </RepositoryProvider>
-    );
-
-    await user.click(screen.getByRole("radio", { name: "秘密" }));
-    await user.type(screen.getByLabelText("署名"), "Alice");
-    await user.click(screen.getByRole("button", { name: "提交气球" }));
-
-    expect(await screen.findByText("气球已送出")).toBeInTheDocument();
-    const storedGifts = await repositories.gifts.listActiveGifts({
-      roomId: realRoom.id,
-      manageToken: realRoom.manageToken
-    });
-    expect(storedGifts[0].balloonParams.hue).toBeGreaterThanOrEqual(220);
-    expect(storedGifts[0].balloonParams.hue).toBeLessThanOrEqual(270);
-  });
-
-  it("opens a local burst preview without creating a submitted gift", async () => {
-    const user = userEvent.setup();
-    const repositories = createInMemoryRepositories();
-    const realRoom = await repositories.rooms.createRoom({
-      title: room.title,
-      recipientName: room.recipientName,
-      promptText: room.promptText
-    });
-
-    render(
-      <RepositoryProvider repositories={repositories}>
-        <GiverComposer
-          room={realRoom}
-          initialRecording={{
-            blob: new Blob(["audio"], { type: "audio/webm" }),
-            durationSec: 12,
-            averageVolume: 0.4,
-            peakVolume: 0.8
-          }}
-          uploadAudio={async () => "https://cdn.example/audio.webm"}
-          uploadImages={async () => ({ urls: [], bytes: 0 })}
-        />
-      </RepositoryProvider>
-    );
-
-    await user.type(screen.getByLabelText("署名"), "Alice");
-    await user.type(screen.getByLabelText("转写文字"), "生日快乐");
-    await user.upload(screen.getByLabelText("图片"), new File(["image-bytes"], "cake.png", { type: "image/png" }));
-    await user.click(screen.getByRole("button", { name: "试爆预览" }));
-
-    const preview = screen.getByRole("dialog", { name: "制作端试爆预览" });
-    expect(preview).toHaveTextContent("生日快乐");
-    expect(preview).toHaveTextContent("语音");
-    expect(preview).toHaveTextContent("Alice");
-    expect(screen.getByRole("img", { name: "试爆图片碎片" })).toHaveAttribute(
-      "src",
-      expect.stringMatching(/^data:image\/png;base64,/)
-    );
-
-    const storedGifts = await repositories.gifts.listActiveGifts({
-      roomId: realRoom.id,
-      manageToken: realRoom.manageToken
-    });
-    expect(storedGifts).toEqual([]);
-  });
-
-  it("records audio and applies live transcription", async () => {
+  it("records audio and analyzes the stopped blob for visual mapping", async () => {
     const user = userEvent.setup();
     const repositories = createInMemoryRepositories();
     const stopMeter = vi.fn();
-    const stopSpeech = vi.fn();
     const recorder = {
-      start: vi.fn(async (onLevel: (level: number) => void) => {
-        onLevel(0.7);
+      start: vi.fn(async (onFrame: (frame: { level: number }) => void) => {
+        onFrame({ level: 0.7 });
         return stopMeter;
       }),
       stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
     };
-    const startTranscription = vi.fn((onTranscript: (result: { source: "speech-recognition"; text: string }) => void) => {
-      onTranscript({ source: "speech-recognition", text: "生日快乐" });
-      return stopSpeech;
-    });
+    const analyzeAudio = vi.fn(async () => ({ ...audioFeatures, durationSec: 3 }));
     let currentTimeMs = 1000;
     const nowMs = vi.fn(() => currentTimeMs);
 
     render(
       <RepositoryProvider repositories={repositories}>
-        <GiverComposer room={room} recorder={recorder} startTranscription={startTranscription} nowMs={nowMs} />
+        <GiverComposer room={room} recorder={recorder} analyzeAudio={analyzeAudio} nowMs={nowMs} />
       </RepositoryProvider>
     );
 
     await user.click(screen.getByRole("button", { name: "开始录音" }));
     expect(screen.getByText("录音中...")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("生日快乐")).toBeInTheDocument();
 
     currentTimeMs = 4100;
     await user.click(screen.getByRole("button", { name: "结束录音" }));
 
     expect(await screen.findByText("3 秒语音已就绪")).toBeInTheDocument();
     expect(stopMeter).toHaveBeenCalledTimes(1);
-    expect(stopSpeech).toHaveBeenCalledTimes(1);
+    expect(analyzeAudio).toHaveBeenCalledWith(expect.any(Blob), expect.objectContaining({ durationSec: 3 }));
+  });
+
+  it("keeps realtime audio features when the stopped blob falls back to default analysis", async () => {
+    const user = userEvent.setup();
+    const repositories = createInMemoryRepositories();
+    const realRoom = await repositories.rooms.createRoom({
+      title: room.title,
+      recipientName: room.recipientName,
+      promptText: room.promptText
+    });
+    const liveFeatures: AudioFeatureSummary = {
+      durationSec: 1.2,
+      spectralCentroid: 3300,
+      rmsEnergy: 0.2,
+      peakEnergy: 0.9,
+      speechRate: 4.8,
+      melBands: [0.1, 0.1, 0.1, 0.1, 1, 1, 1, 1]
+    };
+    const stopMeter = vi.fn();
+    const recorder = {
+      start: vi.fn(async (onFrame: (frame: { level: number; audioFeatures: AudioFeatureSummary }) => void) => {
+        onFrame({ level: 0.8, audioFeatures: liveFeatures });
+        return stopMeter;
+      }),
+      stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
+    };
+    const analyzeAudio = vi.fn(async () =>
+      createFallbackAudioFeatures({
+        durationSec: 3,
+        averageVolume: 0.4,
+        peakVolume: 0.8
+      })
+    );
+    let currentTimeMs = 1000;
+    const nowMs = vi.fn(() => currentTimeMs);
+
+    render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer
+          room={realRoom}
+          recorder={recorder}
+          analyzeAudio={analyzeAudio}
+          uploadAudio={async () => "https://cdn.example/audio.webm"}
+          uploadImages={async () => ({ urls: [], bytes: 0 })}
+          nowMs={nowMs}
+        />
+      </RepositoryProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: "开始录音" }));
+    currentTimeMs = 4000;
+    await user.click(screen.getByRole("button", { name: "结束录音" }));
+    await user.click(await screen.findByRole("button", { name: "提交气球" }));
+
+    const storedGifts = await repositories.gifts.listActiveGifts({
+      roomId: realRoom.id,
+      manageToken: realRoom.manageToken
+    });
+    expect(storedGifts[0].balloonParams.audioFeatures.spectralCentroid).toBe(3300);
+    expect(storedGifts[0].balloonParams.audioFeatures.melBands).toEqual(liveFeatures.melBands);
+    expect(storedGifts[0].balloonParams.lightness).toBe(82);
+    expect(storedGifts[0].balloonParams.spikeCount).toBeGreaterThan(20);
+  });
+
+  it("uses realtime audio features to drive the preview while recording", async () => {
+    const user = userEvent.setup();
+    const repositories = createInMemoryRepositories();
+    const liveFeatures: AudioFeatureSummary = {
+      durationSec: 0.08,
+      spectralCentroid: 4080,
+      rmsEnergy: 0.35,
+      peakEnergy: 0.9,
+      speechRate: 6,
+      melBands: [0.1, 0.1, 0.1, 0.1, 1, 1, 1, 1]
+    };
+    const recorder = {
+      start: vi.fn(async (onFrame: (frame: { level: number; audioFeatures?: AudioFeatureSummary }) => void) => {
+        onFrame({ level: 0.8, audioFeatures: liveFeatures });
+        return vi.fn();
+      }),
+      stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
+    };
+
+    const { container } = render(
+      <RepositoryProvider repositories={repositories}>
+        <GiverComposer room={room} recorder={recorder} />
+      </RepositoryProvider>
+    );
+
+    await user.click(screen.getByRole("button", { name: "开始录音" }));
+
+    const balloon = getPreviewBalloon(container);
+    expect(balloon).toHaveStyle({ "--balloon-lightness": "82%" });
+    expect(balloon.style.filter).toContain("82%");
+    expect(balloon.style.clipPath).toBe("");
+    expect(balloon.querySelector(".live-balloon-body")?.getAttribute("d")).toContain(" C ");
   });
 
   it("smoothly grows the live preview by half of its base size each recording second", async () => {
@@ -391,8 +466,8 @@ describe("GiverComposer", () => {
     const repositories = createInMemoryRepositories();
     let currentTimeMs = 1000;
     const recorder = {
-      start: vi.fn(async (onLevel: (level: number) => void) => {
-        onLevel(0.45);
+      start: vi.fn(async (onFrame: (frame: { level: number }) => void) => {
+        onFrame({ level: 0.45 });
         return vi.fn();
       }),
       stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
@@ -401,7 +476,7 @@ describe("GiverComposer", () => {
 
     const { container } = render(
       <RepositoryProvider repositories={repositories}>
-        <GiverComposer room={room} recorder={recorder} startTranscription={() => null} nowMs={nowMs} />
+        <GiverComposer room={room} recorder={recorder} nowMs={nowMs} />
       </RepositoryProvider>
     );
 
