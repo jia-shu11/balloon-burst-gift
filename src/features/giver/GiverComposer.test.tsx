@@ -6,7 +6,7 @@ import { createInMemoryRepositories } from "../../data/inMemoryRepositories";
 import { RepositoryProvider } from "../../data/repositoryProvider";
 import type { AudioFeatureSummary, GiftRoom, VoiceGiftSignature } from "../../domain/types";
 import { createFallbackAudioFeatures } from "./audioFeatures";
-import { GiverComposer, type RecordingDraft } from "./GiverComposer";
+import { GiverComposer, shouldUseSupabaseStorage, type RecordingDraft } from "./GiverComposer";
 
 const room: GiftRoom = {
   id: "room-1",
@@ -48,6 +48,13 @@ const initialRecording: RecordingDraft = {
   peakVolume: audioFeatures.peakEnergy,
   audioFeatures: { ...audioFeatures, voiceSignature }
 };
+
+describe("shouldUseSupabaseStorage", () => {
+  it("uses cloud media storage when production defaults to Supabase", () => {
+    expect(shouldUseSupabaseStorage({ PROD: true })).toBe(true);
+    expect(shouldUseSupabaseStorage({ PROD: false })).toBe(false);
+  });
+});
 
 afterEach(() => {
   cleanup();
@@ -336,13 +343,17 @@ describe("GiverComposer", () => {
   it("records audio and analyzes the stopped blob for visual mapping", async () => {
     const user = userEvent.setup();
     const repositories = createInMemoryRepositories();
-    const stopMeter = vi.fn();
+    const stopOrder: string[] = [];
+    const stopMeter = vi.fn(() => stopOrder.push("release microphone"));
     const recorder = {
       start: vi.fn(async (onFrame: (frame: { level: number }) => void) => {
         onFrame({ level: 0.7 });
         return stopMeter;
       }),
-      stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
+      stop: vi.fn(async () => {
+        stopOrder.push("finish media recorder");
+        return new Blob(["audio"], { type: "audio/webm" });
+      })
     };
     const analyzeAudio = vi.fn(async () => ({ ...audioFeatures, durationSec: 3 }));
     let currentTimeMs = 1000;
@@ -362,6 +373,7 @@ describe("GiverComposer", () => {
 
     expect(await screen.findByText("3 秒语音已就绪")).toBeInTheDocument();
     expect(stopMeter).toHaveBeenCalledTimes(1);
+    expect(stopOrder).toEqual(["finish media recorder", "release microphone"]);
     expect(analyzeAudio).toHaveBeenCalledWith(expect.any(Blob), expect.objectContaining({ durationSec: 3 }));
   });
 

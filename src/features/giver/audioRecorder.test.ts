@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   appendLiveAudioSamples,
   calculateAudioLevel,
+  chooseAudioRecorderOptions,
+  getAudioRecordingSupportError,
   createLiveRecordingFrame,
-  createRecordingSummary
+  createRecordingSummary,
+  getMicrophoneErrorMessage
 } from "./audioRecorder";
 
 function sineBytes(frequency: number, sampleRate = 8000, length = 2048) {
@@ -84,5 +87,29 @@ describe("audioRecorder metrics", () => {
     });
 
     expect(frame.audioFeatures.spectralCentroid).toBeGreaterThan(1200);
+  });
+
+  it("chooses mp4 when it is the only mobile-compatible recording type", () => {
+    const options = chooseAudioRecorderOptions((mimeType) => mimeType === "audio/mp4");
+
+    expect(options).toEqual({
+      mimeType: "audio/mp4",
+      audioBitsPerSecond: 64_000
+    });
+  });
+
+  it("explains common mobile microphone failures", () => {
+    expect(getMicrophoneErrorMessage(new DOMException("denied", "NotAllowedError"))).toContain("麦克风权限");
+    expect(getMicrophoneErrorMessage(new DOMException("missing", "NotFoundError"))).toContain("未检测到麦克风");
+  });
+
+  it("explains that mobile recording requires an HTTPS link", () => {
+    expect(
+      getAudioRecordingSupportError({
+        isSecureContext: false,
+        hasGetUserMedia: false,
+        hasMediaRecorder: true
+      })
+    ).toContain("HTTPS");
   });
 });

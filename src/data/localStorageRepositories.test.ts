@@ -3,12 +3,14 @@ import { createLocalStorageRepositories, type StorageLike } from "./localStorage
 
 class MemoryStorage implements StorageLike {
   private values = new Map<string, string>();
+  failWrites = false;
 
   getItem(key: string) {
     return this.values.get(key) ?? null;
   }
 
   setItem(key: string, value: string) {
+    if (this.failWrites) throw new DOMException("Quota exceeded", "QuotaExceededError");
     this.values.set(key, value);
   }
 
@@ -30,7 +32,7 @@ describe("createLocalStorageRepositories", () => {
       roomId: room.id,
       inviteToken: room.inviteToken,
       giverName: "Alice",
-      audioUrl: "blob:audio",
+      audioUrl: "data:audio/webm;base64,YXVkaW8=",
       audioDurationSec: 12,
       averageVolume: 0.45,
       peakVolume: 0.85,
@@ -55,6 +57,57 @@ describe("createLocalStorageRepositories", () => {
     });
     await expect(
       restoredRepositories.gifts.listActiveGifts({ roomId: room.id, recipientToken: room.recipientToken })
-    ).resolves.toMatchObject([{ giverName: "Alice", transcript: "生日快乐" }]);
+    ).resolves.toMatchObject([
+      {
+        giverName: "Alice",
+        transcript: "生日快乐",
+        audioUrl: "data:audio/webm;base64,YXVkaW8="
+      }
+    ]);
+  });
+
+  it("reports local storage quota failures instead of silently losing recorded audio", async () => {
+    const storage = new MemoryStorage();
+    const repositories = createLocalStorageRepositories(storage);
+    storage.failWrites = true;
+
+    await expect(
+      repositories.rooms.createRoom({
+        title: "生日气球场",
+        recipientName: "小林",
+        promptText: "录一句祝福"
+      })
+    ).rejects.toThrow("本地存储空间不足");
+  });
+
+  it("does not leave a phantom gift in memory when recorded audio cannot be persisted", async () => {
+    const storage = new MemoryStorage();
+    const repositories = createLocalStorageRepositories(storage);
+    const room = await repositories.rooms.createRoom({
+      title: "生日气球场",
+      recipientName: "小林",
+      promptText: "录一句祝福"
+    });
+    storage.failWrites = true;
+
+    await expect(
+      repositories.gifts.createGift({
+        roomId: room.id,
+        inviteToken: room.inviteToken,
+        giverName: "Alice",
+        audioUrl: "data:audio/webm;base64,YXVkaW8=",
+        audioDurationSec: 12,
+        averageVolume: 0.45,
+        peakVolume: 0.85,
+        transcript: "",
+        editedTranscript: "",
+        extraText: "",
+        imageUrls: [],
+        imageBytes: 0
+      })
+    ).rejects.toThrow("本地存储空间不足");
+
+    storage.failWrites = false;
+    await expect(repositories.gifts.listActiveGifts({ roomId: room.id, manageToken: room.manageToken })).resolves.toEqual([]);
   });
 });

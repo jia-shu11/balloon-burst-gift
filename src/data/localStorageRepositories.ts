@@ -40,8 +40,8 @@ export function createLocalStorageRepositories(storage: StorageLike | null = get
     onChange(snapshot) {
       try {
         storage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-      } catch {
-        // The demo should keep working even when the browser refuses storage.
+      } catch (error) {
+        throw new Error("本地存储空间不足，请缩短录音、减少图片，或改用线上 Supabase 存储", { cause: error });
       }
     }
   });

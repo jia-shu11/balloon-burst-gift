@@ -1,6 +1,6 @@
 import { type CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useRepositories } from "../../data/repositoryProvider";
-import { uploadGiftFile } from "../../data/storage";
+import { resolveRepositoryMode, useRepositories } from "../../data/repositoryProvider";
+import { createAudioStorageFileName, uploadGiftFile } from "../../data/storage";
 import { createSupabaseBrowserClient } from "../../data/supabaseClient";
 import { generateBalloonParams } from "../../domain/balloonParams";
 import type { AudioFeatureSummary, GiftRoom } from "../../domain/types";
@@ -48,8 +48,10 @@ function getPerformanceNowMs() {
   return performance.now();
 }
 
-function shouldUseSupabaseStorage() {
-  return import.meta.env.VITE_REPOSITORY_MODE === "supabase";
+export function shouldUseSupabaseStorage(
+  env: Parameters<typeof resolveRepositoryMode>[0] = import.meta.env
+) {
+  return resolveRepositoryMode(env) === "supabase";
 }
 
 function readBlobAsDataUrl(blob: Blob, failureMessage: string) {
@@ -69,7 +71,13 @@ function readBlobAsDataUrl(blob: Blob, failureMessage: string) {
 
 async function defaultUploadAudio(blob: Blob, context: UploadContext) {
   if (shouldUseSupabaseStorage()) {
-    return uploadGiftFile(createSupabaseBrowserClient(), context.roomId, context.mediaId, blob, "audio.webm");
+    return uploadGiftFile(
+      createSupabaseBrowserClient(),
+      context.roomId,
+      context.mediaId,
+      blob,
+      createAudioStorageFileName(blob.type)
+    );
   }
   return readBlobAsDataUrl(blob, "语音读取失败");
 }
@@ -244,12 +252,19 @@ export function GiverComposer({
 
   async function stopRecording() {
     setError("");
-    stopMeter?.();
+    const releaseMicrophone = stopMeter;
     setStopMeter(null);
     setRecordingActive(false);
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      releaseMicrophone?.();
+    };
 
     try {
       const blob = await recorderRef.current!.stop();
+      release();
       const endedAtMs = nowMs();
       const summary = createRecordingSummary({
         startedAtMs: recordingStartedAtRef.current ?? endedAtMs,
@@ -273,6 +288,7 @@ export function GiverComposer({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "无法结束录音");
     } finally {
+      release();
       recordingStartedAtRef.current = null;
     }
   }

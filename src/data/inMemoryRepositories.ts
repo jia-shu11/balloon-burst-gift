@@ -48,7 +48,12 @@ export function createInMemoryRepositories(
         publishedAt: null
       };
       roomsById.set(room.id, room);
-      persist();
+      try {
+        persist();
+      } catch (error) {
+        roomsById.delete(room.id);
+        throw error;
+      }
       return room;
     },
     async getRoomByInviteToken(inviteToken: string) {
@@ -69,7 +74,12 @@ export function createInMemoryRepositories(
       if (!room) throw new Error("管理链接无效");
       const published: GiftRoom = { ...room, status: "published", publishedAt: room.publishedAt ?? nowIso() };
       roomsById.set(published.id, published);
-      persist();
+      try {
+        persist();
+      } catch (error) {
+        roomsById.set(room.id, room);
+        throw error;
+      }
       return published;
     }
   };
@@ -109,7 +119,12 @@ export function createInMemoryRepositories(
         createdAt: nowIso()
       };
       giftsById.set(gift.id, gift);
-      persist();
+      try {
+        persist();
+      } catch (error) {
+        giftsById.delete(gift.id);
+        throw error;
+      }
       return gift;
     },
     async listActiveGifts(input: { roomId: string; manageToken?: string; recipientToken?: string }) {
@@ -126,7 +141,12 @@ export function createInMemoryRepositories(
       const room = roomsById.get(gift.roomId);
       if (!room || room.manageToken !== input.manageToken) throw new Error("管理链接无效");
       giftsById.set(input.giftId, { ...gift, deletedAt: nowIso() });
-      persist();
+      try {
+        persist();
+      } catch (error) {
+        giftsById.set(gift.id, gift);
+        throw error;
+      }
     }
   };
 
