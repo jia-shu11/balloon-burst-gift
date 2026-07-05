@@ -18,6 +18,15 @@ describe("resolveSupabaseConfig", () => {
     ).toThrow("Supabase config missing");
   });
 
+  it("rejects known unavailable deployment variables", () => {
+    expect(() =>
+      resolveSupabaseConfig({
+        VITE_SUPABASE_URL: "https://sfysmhshvtpopwtcheib.supabase.co",
+        VITE_SUPABASE_ANON_KEY: "example-key"
+      })
+    ).toThrow("Supabase config missing");
+  });
+
   it("keeps explicit deployment variables first", () => {
     expect(
       resolveSupabaseConfig({

@@ -5,11 +5,19 @@ interface SupabaseEnv {
   VITE_SUPABASE_ANON_KEY?: string;
 }
 
+const UNAVAILABLE_SUPABASE_URLS = new Set(["https://sfysmhshvtpopwtcheib.supabase.co"]);
+
 function normalizeSupabaseConfig(env: SupabaseEnv) {
   const url = env.VITE_SUPABASE_URL?.trim() ?? "";
   const anonKey = env.VITE_SUPABASE_ANON_KEY?.trim() ?? "";
 
-  if (!url || !anonKey || url === "https://your-project.supabase.co" || anonKey === "your-anon-key") {
+  if (
+    !url ||
+    !anonKey ||
+    url === "https://your-project.supabase.co" ||
+    anonKey === "your-anon-key" ||
+    UNAVAILABLE_SUPABASE_URLS.has(url)
+  ) {
     return null;
   }
 

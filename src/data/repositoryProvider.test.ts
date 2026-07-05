@@ -19,6 +19,17 @@ describe("resolveRepositoryMode", () => {
     expect(resolveRepositoryMode({ PROD: false })).toBe("local");
   });
 
+  it("uses local browser storage when deployed Supabase URL is unavailable", () => {
+    expect(
+      resolveRepositoryMode({
+        PROD: true,
+        VITE_REPOSITORY_MODE: "supabase",
+        VITE_SUPABASE_URL: "https://sfysmhshvtpopwtcheib.supabase.co",
+        VITE_SUPABASE_ANON_KEY: "example-key"
+      })
+    ).toBe("local");
+  });
+
   it("uses Supabase only when a usable URL and anon key are configured", () => {
     expect(
       resolveRepositoryMode({
