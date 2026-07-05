@@ -2,11 +2,20 @@ import { describe, expect, it } from "vitest";
 import { resolveSupabaseConfig } from "./supabaseClient";
 
 describe("resolveSupabaseConfig", () => {
-  it("uses the public course project defaults when Vercel build variables are missing", () => {
-    expect(resolveSupabaseConfig({})).toEqual({
-      url: "https://sfysmhshvtpopwtcheib.supabase.co",
-      anonKey: "sb_publishable__eEtg1ziWoJgckeufOzDVA_34QNT9Uo"
-    });
+  it("requires explicit deployment variables", () => {
+    expect(() => resolveSupabaseConfig({})).toThrow("Supabase config missing");
+    expect(() => resolveSupabaseConfig({ VITE_SUPABASE_ANON_KEY: "example-key" })).toThrow(
+      "Supabase config missing"
+    );
+  });
+
+  it("rejects placeholder deployment variables", () => {
+    expect(() =>
+      resolveSupabaseConfig({
+        VITE_SUPABASE_URL: "https://your-project.supabase.co",
+        VITE_SUPABASE_ANON_KEY: "your-anon-key"
+      })
+    ).toThrow("Supabase config missing");
   });
 
   it("keeps explicit deployment variables first", () => {

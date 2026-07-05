@@ -7,9 +7,26 @@ describe("resolveRepositoryMode", () => {
     expect(resolveRepositoryMode({ PROD: true, VITE_REPOSITORY_MODE: "local" })).toBe("local");
   });
 
-  it("uses Supabase for deployed builds unless a local demo mode is explicitly requested", () => {
-    expect(resolveRepositoryMode({ PROD: true })).toBe("supabase");
+  it("uses local browser storage when deployed Supabase config is incomplete", () => {
+    expect(resolveRepositoryMode({ PROD: true })).toBe("local");
+    expect(
+      resolveRepositoryMode({
+        PROD: true,
+        VITE_REPOSITORY_MODE: "supabase",
+        VITE_SUPABASE_ANON_KEY: "example-key"
+      })
+    ).toBe("local");
     expect(resolveRepositoryMode({ PROD: false })).toBe("local");
-    expect(resolveRepositoryMode({ PROD: false, VITE_REPOSITORY_MODE: "supabase" })).toBe("supabase");
+  });
+
+  it("uses Supabase only when a usable URL and anon key are configured", () => {
+    expect(
+      resolveRepositoryMode({
+        PROD: true,
+        VITE_REPOSITORY_MODE: "supabase",
+        VITE_SUPABASE_URL: "https://example.supabase.co",
+        VITE_SUPABASE_ANON_KEY: "example-key"
+      })
+    ).toBe("supabase");
   });
 });

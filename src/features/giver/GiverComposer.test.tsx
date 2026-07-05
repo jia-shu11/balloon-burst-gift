@@ -50,9 +50,17 @@ const initialRecording: RecordingDraft = {
 };
 
 describe("shouldUseSupabaseStorage", () => {
-  it("uses cloud media storage when production defaults to Supabase", () => {
-    expect(shouldUseSupabaseStorage({ PROD: true })).toBe(true);
+  it("uses cloud media storage only when Supabase is configured", () => {
+    expect(shouldUseSupabaseStorage({ PROD: true })).toBe(false);
     expect(shouldUseSupabaseStorage({ PROD: false })).toBe(false);
+    expect(
+      shouldUseSupabaseStorage({
+        PROD: true,
+        VITE_REPOSITORY_MODE: "supabase",
+        VITE_SUPABASE_URL: "https://example.supabase.co",
+        VITE_SUPABASE_ANON_KEY: "example-key"
+      })
+    ).toBe(true);
   });
 });
 

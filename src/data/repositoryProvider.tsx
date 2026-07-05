@@ -3,7 +3,7 @@ import type { GiftRepository, RoomRepository } from "./contracts";
 import { createSupabaseGiftRepository } from "./giftRepository";
 import { createLocalStorageRepositories } from "./localStorageRepositories";
 import { createSupabaseRoomRepository } from "./roomRepository";
-import { createSupabaseBrowserClient } from "./supabaseClient";
+import { createSupabaseBrowserClient, hasUsableSupabaseConfig } from "./supabaseClient";
 
 export interface Repositories {
   rooms: RoomRepository;
@@ -13,15 +13,17 @@ export interface Repositories {
 interface RepositoryModeEnv {
   PROD?: boolean;
   VITE_REPOSITORY_MODE?: string;
+  VITE_SUPABASE_URL?: string;
+  VITE_SUPABASE_ANON_KEY?: string;
 }
 
 const RepositoryContext = createContext<Repositories | null>(null);
 
 export function resolveRepositoryMode(env: RepositoryModeEnv): "local" | "supabase" {
   const mode = env.VITE_REPOSITORY_MODE?.trim().toLowerCase();
-  if (mode === "supabase") return "supabase";
+  if (mode === "supabase") return hasUsableSupabaseConfig(env) ? "supabase" : "local";
   if (mode === "local" || mode === "localstorage" || mode === "memory" || mode === "demo") return "local";
-  return env.PROD ? "supabase" : "local";
+  return env.PROD && hasUsableSupabaseConfig(env) ? "supabase" : "local";
 }
 
 function createDefaultRepositories(): Repositories {
