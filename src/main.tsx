@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import { App } from "./App";
 import { RepositoryProvider } from "./data/repositoryProvider";
 import "./styles/global.css";
+import "./styles/cinematic.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

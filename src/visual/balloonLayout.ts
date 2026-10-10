@@ -29,13 +29,19 @@ function clamp(value: number, min: number, max: number) {
 }
 
 export function createBalloonLayout(gifts: BalloonGift[], stage: StageSize): LaidOutBalloon[] {
-  const columns = Math.max(1, Math.ceil(Math.sqrt(gifts.length)));
+  const columns = Math.max(1, Math.ceil(Math.sqrt(gifts.length * stage.width / stage.height)));
   const rows = Math.max(1, Math.ceil(gifts.length / columns));
   const cellWidth = stage.width / columns;
   const cellHeight = stage.height / rows;
+  const portrait = stage.height > stage.width;
+  const displayScale = Math.min(1.6, Math.max(1, stage.height / stage.width));
 
   return gifts.map((gift, index) => {
     const radius = gift.balloonParams.radius;
+    const radiusX = Math.min(stage.width / 2, radius * displayScale * gift.balloonParams.stretchX + 12);
+    const radiusY = Math.min(stage.height / 3, radius * displayScale * gift.balloonParams.stretchY * 1.25 + 12);
+    const topSafe = Math.min(stage.height / 2, stage.height * (portrait ? 0.17 : 0.13) + radiusY);
+    const bottomSafe = Math.max(topSafe, stage.height * (portrait ? 0.78 : 0.87) - radiusY);
     const column = index % columns;
     const row = Math.floor(index / columns);
     const rawX = column * cellWidth + cellWidth * (0.32 + unit(gift.id, 1) * 0.36);
@@ -43,8 +49,8 @@ export function createBalloonLayout(gifts: BalloonGift[], stage: StageSize): Lai
 
     return {
       gift,
-      x: Math.round(clamp(rawX, radius, stage.width - radius)),
-      y: Math.round(clamp(rawY, radius, stage.height - radius)),
+      x: Math.round(clamp(rawX, radiusX, stage.width - radiusX)),
+      y: Math.round(clamp(rawY, topSafe, bottomSafe)),
       driftPhase: Number((unit(gift.id, 3) * Math.PI * 2).toFixed(3))
     };
   });

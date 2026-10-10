@@ -2,8 +2,25 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import type { BalloonGift, GiftRoom } from "../../domain/types";
-import { createFakeCanvasContext } from "../../test/fakeCanvasContext";
 import { createBalloonRenderExclusionIds, RecipientStage } from "./RecipientStage";
+
+const { renderScene } = vi.hoisted(() => ({ renderScene: vi.fn((_props: SceneProps) => null) }));
+
+vi.mock("../../visual/three/BalloonScene", () => ({ BalloonScene: renderScene }));
+
+interface SceneProps {
+  variant: string;
+  balloons: Array<{ id: string; params: BalloonGift["balloonParams"]; x: number; y: number }>;
+  stageSize: { width: number; height: number };
+  excludedIds: Set<string>;
+  burstIds: Set<string>;
+  onBalloonClick: (id: string, point: { x: number; y: number }) => void;
+  onStatus: (status: "ready" | "fallback") => void;
+}
+
+function sceneProps() {
+  return renderScene.mock.lastCall?.[0];
+}
 
 const room: GiftRoom = {
   id: "room",
@@ -104,7 +121,7 @@ const stretchedGift: BalloonGift = {
 };
 
 beforeEach(() => {
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(createFakeCanvasContext());
+  renderScene.mockClear();
 });
 
 afterEach(() => {
@@ -140,13 +157,13 @@ function advanceToGiftFragments() {
 }
 
 describe("RecipientStage", () => {
-  it("excludes bursting balloons from canvas rendering before gift fragments appear", () => {
+  it("excludes bursting balloons from scene rendering before gift fragments appear", () => {
     const hiddenIds = createBalloonRenderExclusionIds(new Set(["finished"]), new Set(["bursting"]));
 
     expect(hiddenIds).toEqual(new Set(["finished", "bursting"]));
   });
 
-  it("matches the canvas logical stage to a portrait phone viewport", () => {
+  it("matches the 3D scene coordinates to a portrait phone viewport", () => {
     const observerCallbacks: ResizeObserverCallback[] = [];
 
     vi.stubGlobal(
@@ -162,9 +179,7 @@ describe("RecipientStage", () => {
       }
     );
 
-    const { container } = renderStage([gift]);
-    const canvas = container.querySelector("canvas");
-    expect(canvas).not.toBeNull();
+    renderStage([gift]);
 
     act(() => {
       observerCallbacks[0]?.(
@@ -177,8 +192,51 @@ describe("RecipientStage", () => {
       );
     });
 
-    expect(canvas!.width).toBe(1200);
-    expect(canvas!.height).toBe(2400);
+    expect(sceneProps()?.stageSize).toEqual({ width: 1200, height: 2400 });
+    expect(sceneProps()?.variant).toBe("recipient");
+    expect(sceneProps()?.balloons[0]).toMatchObject({ id: "gift", params: gift.balloonParams });
+  });
+
+  it("reveals a raycast gift at the projected 3D position and excludes it immediately", () => {
+    vi.useFakeTimers();
+    const playAudio = vi.fn();
+    renderStage([gift], playAudio);
+
+    expect(sceneProps()).toBeDefined();
+    act(() => {
+      sceneProps()!.onBalloonClick("gift", { x: 300, y: 180 });
+    });
+
+    const rupture = screen.getByRole("img", { name: "Alice 的气球破裂动画" });
+    expect(rupture.style.left).toBe("25%");
+    expect(rupture.style.top).toBe("20%");
+    expect(sceneProps()?.excludedIds.has("gift")).toBe(true);
+    expect(sceneProps()?.burstIds.has("gift")).toBe(true);
+    expect(playAudio).toHaveBeenCalledWith("audio.webm");
+    expect(screen.queryByText("Alice")).not.toBeInTheDocument();
+
+    advanceToGiftFragments();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(sceneProps()?.excludedIds.has("gift")).toBe(true);
+    expect(sceneProps()?.burstIds.has("gift")).toBe(true);
+  });
+
+  it("uses 3D particles when the scene is ready and keeps the rupture announcement accessible", () => {
+    vi.useFakeTimers();
+    const { container } = renderStage([gift]);
+
+    expect(sceneProps()).toBeDefined();
+    act(() => {
+      sceneProps()!.onStatus("ready");
+    });
+    fireEvent.click(screen.getByLabelText("爆破匿名气球 1"));
+
+    expect(screen.getByRole("img", { name: "Alice 的气球破裂动画" })).toBeInTheDocument();
+    expect(container.querySelector(".rupture-shell")).not.toBeInTheDocument();
+    expect(container.querySelector(".recipient-stage")).toHaveAttribute("data-scene-mode", "ready");
   });
 
   it("hides the anonymous balloon count while exposing burst all control", () => {
@@ -274,6 +332,20 @@ describe("RecipientStage", () => {
     expect(screen.getByText("语音已失效，请重新提交")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "语音已失效，请重新提交" }));
+    expect(playAudio).not.toHaveBeenCalled();
+  });
+
+  it("reveals silent demo gifts without attempting empty audio playback", () => {
+    vi.useFakeTimers();
+    const playAudio = vi.fn();
+    renderStage([{ ...gift, audioUrl: "" }], playAudio);
+
+    fireEvent.click(screen.getByLabelText("爆破匿名气球 1"));
+    advanceToGiftFragments();
+
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(playAudio).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "语音" }));
     expect(playAudio).not.toHaveBeenCalled();
   });
 

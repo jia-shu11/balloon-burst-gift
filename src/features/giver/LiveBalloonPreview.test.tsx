@@ -1,7 +1,23 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { BalloonParams } from "../../domain/types";
-import { LiveBalloonPreview } from "./LiveBalloonPreview";
+import { getPreviewFitScale, LiveBalloonPreview } from "./LiveBalloonPreview";
+
+const { renderScene } = vi.hoisted(() => ({ renderScene: vi.fn((_props: SceneProps) => null) }));
+
+vi.mock("../../visual/three/BalloonScene", () => ({ BalloonScene: renderScene }));
+
+interface SceneProps {
+  variant: string;
+  balloons: Array<{ id: string; params: BalloonParams }>;
+  level: number;
+  onBalloonClick: (id: string, point: { x: number; y: number }) => void;
+  onStatus: (status: "ready" | "fallback") => void;
+}
+
+function sceneProps() {
+  return renderScene.mock.lastCall?.[0];
+}
 
 const params: BalloonParams = {
   radius: 80,
@@ -38,88 +54,71 @@ const params: BalloonParams = {
   }
 };
 
+beforeEach(() => {
+  renderScene.mockClear();
+});
+
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe("LiveBalloonPreview", () => {
-  it("keeps the balloon body, knot, and string inside one assembly", () => {
-    render(<LiveBalloonPreview params={params} level={0.3} />);
+  it("updates the 3D balloon from the live voice shape and microphone level", () => {
+    const { rerender } = render(<LiveBalloonPreview params={params} level={0.3} />);
 
-    const preview = screen.getByLabelText("实时鼓胀气球预览");
-    const assembly = preview.querySelector(".live-balloon-assembly");
+    expect(sceneProps()?.variant).toBe("preview");
+    expect(sceneProps()?.balloons).toEqual([{ id: "preview", params }]);
+    expect(sceneProps()?.level).toBe(0.3);
 
-    expect(assembly).toBeTruthy();
-    expect(preview.children).toHaveLength(1);
-    expect(assembly?.querySelector(".live-balloon")).toBeTruthy();
-    expect(assembly?.querySelector(".live-balloon-knot")).toBeTruthy();
-    expect(assembly?.querySelector(".live-balloon-string")).toBeTruthy();
+    const changedParams = { ...params, radius: 130, lightness: 82, spikeCount: 12 };
+    rerender(<LiveBalloonPreview params={changedParams} level={0.8} />);
+
+    expect(sceneProps()?.balloons[0].params).toEqual(changedParams);
+    expect(sceneProps()?.level).toBe(0.8);
   });
 
-  it("scales oversized previews down so they fit beside the form", () => {
-    render(
-      <LiveBalloonPreview
-        params={{
-          ...params,
-          radius: 260,
-          stretchX: 1.14,
-          stretchY: 1.28,
-          stringLength: 110
-        }}
-        level={0.3}
-      />
-    );
-
-    const assembly = screen.getByLabelText("实时鼓胀气球预览").querySelector<HTMLElement>(".live-balloon-assembly");
-
-    expect(assembly?.style.transform).toMatch(/^scale\(0\.\d+\)$/);
+  it("preserves the public fit calculation for oversized balloon shapes", () => {
+    expect(getPreviewFitScale(592.8, 665.6, 110)).toBe(0.607);
+    expect(getPreviewFitScale(160, 188.8, 72)).toBe(1);
   });
 
-  it("applies frequency-derived lightness to the preview balloon", () => {
-    render(<LiveBalloonPreview params={{ ...params, lightness: 82 }} level={0.3} />);
-
-    const balloon = screen.getByRole("button", { name: "轻触气球预览" });
-
-    expect(balloon).toHaveStyle({ "--balloon-lightness": "82%" });
-  });
-
-  it("renders only the white voice signature line without dark texture bands", () => {
-    render(<LiveBalloonPreview params={params} level={0.3} />);
-
-    const balloon = screen.getByRole("button", { name: "轻触气球预览" });
-
-    expect(balloon.querySelector(".live-balloon-voice-line")).toBeTruthy();
-    expect(balloon.querySelector(".live-balloon-texture-band")).toBeNull();
-  });
-
-  it("renders Mel spikes as a smooth organic body path without a polygon clip mask", () => {
-    render(<LiveBalloonPreview params={{ ...params, spikeCount: 12 }} level={0.3} />);
-
-    const balloon = screen.getByRole("button", { name: "轻触气球预览" });
-    const body = balloon.querySelector(".live-balloon-body");
-
-    expect(balloon.style.clipPath).toBe("");
-    expect(balloon).toHaveStyle({ boxShadow: "none" });
-    expect(body?.tagName.toLowerCase()).toBe("path");
-    expect(body?.getAttribute("d")).toContain(" C ");
-    expect(body?.getAttribute("d")).not.toContain(" L ");
-  });
-
-  it("does not render visible rim or ring decorations around the preview balloon", () => {
-    render(<LiveBalloonPreview params={params} level={0.3} />);
-
-    const preview = screen.getByLabelText("实时鼓胀气球预览");
-
-    expect(preview.querySelector(".live-balloon-rim")).toBeNull();
-    expect(preview.querySelector(".live-balloon-wave")).toBeNull();
-  });
-
-  it("lets the giver tap the preview balloon for a soft rebound", () => {
+  it("lets the giver activate the accessible control for a temporary 3D rebound", () => {
+    vi.useFakeTimers();
     render(<LiveBalloonPreview params={params} level={0.3} />);
 
     const preview = screen.getByLabelText("实时鼓胀气球预览");
     fireEvent.click(screen.getByRole("button", { name: "轻触气球预览" }));
 
     expect(preview).toHaveClass("is-poked");
+    expect(sceneProps()?.level).toBeGreaterThan(0.3);
+
+    act(() => {
+      vi.advanceTimersByTime(320);
+    });
+    expect(preview).not.toHaveClass("is-poked");
+    expect(sceneProps()?.level).toBe(0.3);
+  });
+
+  it("responds to a 3D raycast with the same rebound as the accessible control", () => {
+    render(<LiveBalloonPreview params={params} level={0.3} />);
+
+    expect(sceneProps()).toBeDefined();
+    act(() => {
+      sceneProps()!.onBalloonClick("preview", { x: 240, y: 300 });
+    });
+
+    expect(screen.getByLabelText("实时鼓胀气球预览")).toHaveClass("is-poked");
+  });
+
+  it("reports the available rendering mode on the preview", () => {
+    render(<LiveBalloonPreview params={params} level={0.3} />);
+
+    expect(sceneProps()).toBeDefined();
+    act(() => {
+      sceneProps()!.onStatus("fallback");
+    });
+
+    expect(screen.getByLabelText("实时鼓胀气球预览")).toHaveAttribute("data-scene-mode", "fallback");
   });
 });

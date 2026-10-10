@@ -1,7 +1,6 @@
 import {
   type CSSProperties,
   type KeyboardEvent,
-  type MouseEvent,
   type PointerEvent,
   useEffect,
   useMemo,
@@ -11,11 +10,10 @@ import {
 import type { BalloonGift, GiftRoom } from "../../domain/types";
 import { createBalloonLayout } from "../../visual/balloonLayout";
 import { createBurstFragments, updateFragments, type Fragment } from "../../visual/fragments";
+import { BalloonScene } from "../../visual/three/BalloonScene";
 import {
   createResponsiveStageSize,
-  DEFAULT_CANVAS_STAGE_SIZE,
-  hitTestBalloon,
-  useCanvasBalloons
+  DEFAULT_CANVAS_STAGE_SIZE
 } from "./useCanvasBalloons";
 
 const BURST_ALL_HOLD_MS = 800;
@@ -112,8 +110,8 @@ export function RecipientStage({
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [visibleStageSize, setVisibleStageSize] = useState(DEFAULT_CANVAS_STAGE_SIZE);
   const [stageSize, setStageSize] = useState(DEFAULT_CANVAS_STAGE_SIZE);
+  const [sceneMode, setSceneMode] = useState<"loading" | "ready" | "fallback">("loading");
   const stageFieldRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const burstAllTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chargeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const burstVisualTimersRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
@@ -121,11 +119,14 @@ export function RecipientStage({
   const suppressedClickFragmentIdsRef = useRef<Set<string>>(new Set());
   const stageDisplayScale = visibleStageSize.width / stageSize.width;
   const layout = useMemo(() => createBalloonLayout(gifts, stageSize), [gifts, stageSize]);
-  const canvasExcludedBalloonIds = useMemo(
+  const sceneBalloons = useMemo(
+    () => layout.map((item) => ({ id: item.gift.id, params: item.gift.balloonParams, x: item.x, y: item.y })),
+    [layout]
+  );
+  const excludedBalloonIds = useMemo(
     () => createBalloonRenderExclusionIds(burstIds, burstingIds),
     [burstIds, burstingIds]
   );
-  useCanvasBalloons(canvasRef, layout, canvasExcludedBalloonIds, stageSize);
 
   function clearBurstAllTimers() {
     if (burstAllTimerRef.current !== null) {
@@ -244,7 +245,7 @@ export function RecipientStage({
         burstAll
       }
     ]);
-    if (shouldPlayAudio && !isExpiredLocalAudioUrl(gift.audioUrl)) playAudio(gift.audioUrl);
+    if (shouldPlayAudio && gift.audioUrl && !isExpiredLocalAudioUrl(gift.audioUrl)) playAudio(gift.audioUrl);
 
     const fragmentTimer = setTimeout(() => {
       setBurstIds((current) => new Set(current).add(gift.id));
@@ -306,25 +307,9 @@ export function RecipientStage({
     cancelBurstAllHold();
   }
 
-  function handleCanvasClick(event: MouseEvent<HTMLCanvasElement>) {
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * stageSize.width;
-    const y = ((event.clientY - rect.top) / Math.max(1, rect.height)) * stageSize.height;
-    const hitId = hitTestBalloon(
-      layout
-        .filter((item) => !burstIds.has(item.gift.id) && !burstingIds.has(item.gift.id))
-        .map((item) => ({
-          id: item.gift.id,
-          x: item.x,
-          y: item.y,
-          radius: item.gift.balloonParams.radius,
-          stretchX: item.gift.balloonParams.stretchX,
-          stretchY: item.gift.balloonParams.stretchY
-        })),
-      { x, y }
-    );
-    const item = layout.find((candidate) => candidate.gift.id === hitId);
-    if (item) burstGift(item.gift, item.x, item.y);
+  function handleSceneBalloonClick(id: string, point: { x: number; y: number }) {
+    const item = layout.find((candidate) => candidate.gift.id === id);
+    if (item) burstGift(item.gift, point.x, point.y);
   }
 
   function eventToStagePoint(event: PointerEvent<HTMLElement>) {
@@ -369,7 +354,7 @@ export function RecipientStage({
       return;
     }
     if (fragment.kind === "waveform") {
-      if (isExpiredLocalAudioUrl(fragment.audioUrl)) {
+      if (!fragment.audioUrl || isExpiredLocalAudioUrl(fragment.audioUrl)) {
         nudgeFragment(fragment.id, 0.45);
         return;
       }
@@ -456,7 +441,7 @@ export function RecipientStage({
   }
 
   return (
-    <section className="recipient-stage" aria-label={`${room.title} 收礼现场`}>
+    <section className="recipient-stage" aria-label={`${room.title} 收礼现场`} data-scene-mode={sceneMode}>
       <div className="stage-poster-art" aria-hidden="true">
         <span className="stage-title-letters">{room.title}</span>
         <span className="stage-shape stage-shape-star-blue" />
@@ -471,10 +456,20 @@ export function RecipientStage({
       <div className="stage-topbar">
         <strong>
           <span>to {room.recipientName}</span>
+          <small>{room.title}</small>
         </strong>
       </div>
       <div className="stage-field" ref={stageFieldRef}>
-        <canvas ref={canvasRef} className="balloon-canvas" onClick={handleCanvasClick} />
+        <BalloonScene
+          variant="recipient"
+          className="recipient-balloon-scene"
+          balloons={sceneBalloons}
+          stageSize={stageSize}
+          excludedIds={excludedBalloonIds}
+          burstIds={excludedBalloonIds}
+          onBalloonClick={handleSceneBalloonClick}
+          onStatus={setSceneMode}
+        />
         {gifts.length === 0 ? (
           <div className="stage-empty-state">
             <h2>礼物还在准备中</h2>
@@ -497,7 +492,7 @@ export function RecipientStage({
             key={effect.id}
             role="img"
             aria-label={`${effect.giverName} 的气球破裂动画`}
-            className={`rupture-effect${effect.burstAll ? " rupture-effect-all" : ""}`}
+            className={sceneMode === "ready" ? "sr-only" : `rupture-effect${effect.burstAll ? " rupture-effect-all" : ""}`}
             style={
               {
                 left: `${(effect.x / stageSize.width) * 100}%`,
@@ -510,27 +505,31 @@ export function RecipientStage({
               } as CSSProperties
             }
           >
-            <span className="rupture-shell" aria-hidden="true">
-              <span className="rupture-crack rupture-crack-primary" />
-              <span className="rupture-crack rupture-crack-secondary" />
-              <span className="rupture-crack rupture-crack-tertiary" />
-            </span>
-            <span className="rupture-wave" aria-hidden="true" />
-            <span className="latex-flap" aria-hidden="true" />
-            {RUPTURE_SHARDS.map((shard) => (
-              <span
-                key={`${shard.angle}-${shard.distance}`}
-                className="rupture-shard"
-                style={
-                  {
-                    "--shard-angle": `${shard.angle}deg`,
-                    "--shard-distance": `${effect.radius * stageDisplayScale * shard.distance * (effect.burstAll ? 1.18 : 1)}px`,
-                    "--shard-rotate": `${shard.rotate}deg`
-                  } as CSSProperties
-                }
-                aria-hidden="true"
-              />
-            ))}
+            {sceneMode !== "ready" ? (
+              <>
+                <span className="rupture-shell" aria-hidden="true">
+                  <span className="rupture-crack rupture-crack-primary" />
+                  <span className="rupture-crack rupture-crack-secondary" />
+                  <span className="rupture-crack rupture-crack-tertiary" />
+                </span>
+                <span className="rupture-wave" aria-hidden="true" />
+                <span className="latex-flap" aria-hidden="true" />
+                {RUPTURE_SHARDS.map((shard) => (
+                  <span
+                    key={`${shard.angle}-${shard.distance}`}
+                    className="rupture-shard"
+                    style={
+                      {
+                        "--shard-angle": `${shard.angle}deg`,
+                        "--shard-distance": `${effect.radius * stageDisplayScale * shard.distance * (effect.burstAll ? 1.18 : 1)}px`,
+                        "--shard-rotate": `${shard.rotate}deg`
+                      } as CSSProperties
+                    }
+                    aria-hidden="true"
+                  />
+                ))}
+              </>
+            ) : null}
           </div>
         ))}
         {fragments.map((fragment) => (
@@ -568,6 +567,9 @@ export function RecipientStage({
             </button>
           </div>
         </div>
+      ) : null}
+      {gifts.length > 0 ? (
+        <p className="stage-hint">轻触气球，打开一份心意</p>
       ) : null}
       {gifts.length > 0 ? (
         <button

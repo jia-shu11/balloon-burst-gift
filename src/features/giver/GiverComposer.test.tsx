@@ -1,12 +1,18 @@
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryRepositories } from "../../data/inMemoryRepositories";
 import { RepositoryProvider } from "../../data/repositoryProvider";
-import type { AudioFeatureSummary, GiftRoom, VoiceGiftSignature } from "../../domain/types";
+import type { AudioFeatureSummary, BalloonParams, GiftRoom, VoiceGiftSignature } from "../../domain/types";
 import { createFallbackAudioFeatures } from "./audioFeatures";
 import { GiverComposer, shouldUseSupabaseStorage, type RecordingDraft } from "./GiverComposer";
+
+const { renderScene } = vi.hoisted(() => ({
+  renderScene: vi.fn((_props: { balloons: Array<{ id: string; params: BalloonParams }> }) => null)
+}));
+
+vi.mock("../../visual/three/BalloonScene", () => ({ BalloonScene: renderScene }));
 
 const room: GiftRoom = {
   id: "room-1",
@@ -64,6 +70,10 @@ describe("shouldUseSupabaseStorage", () => {
   });
 });
 
+beforeEach(() => {
+  renderScene.mockClear();
+});
+
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
@@ -71,22 +81,22 @@ afterEach(() => {
 });
 
 describe("GiverComposer", () => {
-  function getPreviewBalloon(container: HTMLElement) {
-    const balloon = container.querySelector<HTMLElement>(".live-balloon");
-    if (!balloon) throw new Error("Live balloon preview was not rendered");
-    return balloon;
+  function getPreviewParams() {
+    const params = renderScene.mock.lastCall?.[0].balloons.find((balloon) => balloon.id === "preview")?.params;
+    if (!params) throw new Error("Live balloon preview was not rendered");
+    return params;
   }
 
   it("starts with zero lightness before any audio frame is available", () => {
     const repositories = createInMemoryRepositories();
 
-    const { container } = render(
+    render(
       <RepositoryProvider repositories={repositories}>
         <GiverComposer room={room} />
       </RepositoryProvider>
     );
 
-    expect(getPreviewBalloon(container)).toHaveStyle({ "--balloon-lightness": "0%" });
+    expect(getPreviewParams().lightness).toBe(0);
   });
 
   it("keeps the composer focused on recording, hue, and image upload", () => {
@@ -224,23 +234,17 @@ describe("GiverComposer", () => {
   it("changes hue without regenerating the preview balloon geometry", () => {
     const repositories = createInMemoryRepositories();
 
-    const { container } = render(
+    render(
       <RepositoryProvider repositories={repositories}>
         <GiverComposer room={room} initialRecording={initialRecording} />
       </RepositoryProvider>
     );
 
-    const balloon = getPreviewBalloon(container);
-    const initialWidth = balloon.style.width;
-    const initialHeight = balloon.style.height;
-    const initialStringHeight = container.querySelector<HTMLElement>(".live-balloon-string")?.style.height;
+    const initialParams = getPreviewParams();
 
     fireEvent.change(screen.getByLabelText("气球颜色"), { target: { value: "280" } });
 
-    expect(balloon.style.width).toBe(initialWidth);
-    expect(balloon.style.height).toBe(initialHeight);
-    expect(container.querySelector<HTMLElement>(".live-balloon-string")?.style.height).toBe(initialStringHeight);
-    expect(balloon.style.filter).toContain("hsl(280");
+    expect(getPreviewParams()).toEqual({ ...initialParams, hue: 280 });
   });
 
   it("stores local uploaded images as persistent data urls", async () => {
@@ -466,7 +470,7 @@ describe("GiverComposer", () => {
       stop: vi.fn(async () => new Blob(["audio"], { type: "audio/webm" }))
     };
 
-    const { container } = render(
+    render(
       <RepositoryProvider repositories={repositories}>
         <GiverComposer room={room} recorder={recorder} />
       </RepositoryProvider>
@@ -474,11 +478,11 @@ describe("GiverComposer", () => {
 
     await user.click(screen.getByRole("button", { name: "开始录音" }));
 
-    const balloon = getPreviewBalloon(container);
-    expect(balloon).toHaveStyle({ "--balloon-lightness": "82%" });
-    expect(balloon.style.filter).toContain("82%");
-    expect(balloon.style.clipPath).toBe("");
-    expect(balloon.querySelector(".live-balloon-body")?.getAttribute("d")).toContain(" C ");
+    const params = getPreviewParams();
+    expect(params.lightness).toBe(82);
+    expect(params.spikeCount).toBeGreaterThan(20);
+    expect(params.audioFeatures.spectralCentroid).toBe(4080);
+    expect(params.audioFeatures.melBands).toEqual(liveFeatures.melBands);
   });
 
   it("smoothly grows the live preview by half of its base size each recording second", async () => {
@@ -494,7 +498,7 @@ describe("GiverComposer", () => {
     };
     const nowMs = vi.fn(() => currentTimeMs);
 
-    const { container } = render(
+    render(
       <RepositoryProvider repositories={repositories}>
         <GiverComposer room={room} recorder={recorder} nowMs={nowMs} />
       </RepositoryProvider>
@@ -504,22 +508,22 @@ describe("GiverComposer", () => {
       fireEvent.click(screen.getByRole("button", { name: "开始录音" }));
     });
     expect(screen.getByText("录音中...")).toBeInTheDocument();
-    const initialWidth = Number.parseFloat(getPreviewBalloon(container).style.width);
+    const initialRadius = getPreviewParams().radius;
 
     currentTimeMs += 1000;
     await act(async () => {
       vi.advanceTimersByTime(1000);
     });
-    const oneSecondWidth = Number.parseFloat(getPreviewBalloon(container).style.width);
+    const oneSecondRadius = getPreviewParams().radius;
 
     currentTimeMs += 1000;
     await act(async () => {
       vi.advanceTimersByTime(1000);
     });
 
-    const grownWidth = Number.parseFloat(getPreviewBalloon(container).style.width);
-    expect(oneSecondWidth).toBeGreaterThan(initialWidth * 1.45);
-    expect(oneSecondWidth).toBeLessThan(initialWidth * 1.55);
-    expect(grownWidth).toBeGreaterThan(initialWidth);
+    const grownRadius = getPreviewParams().radius;
+    expect(oneSecondRadius).toBeGreaterThan(initialRadius * 1.45);
+    expect(oneSecondRadius).toBeLessThan(initialRadius * 1.55);
+    expect(grownRadius).toBeGreaterThan(initialRadius);
   });
 });
